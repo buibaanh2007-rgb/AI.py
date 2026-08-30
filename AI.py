@@ -10,12 +10,12 @@ import speech_recognition as sr
 app = Flask(__name__)
 recognizer = sr.Recognizer()
 
-# Biến toàn cục quản lý trạng thái thức/ngủ và timeout 20 giây
+# Biến toàn cục quản lý trạng thái thức/ngủ và timeout 60 giây
 is_awake = False
 last_active_time = 0
 SLEEP_TIMEOUT = 60
 
-print("[Server] Đã sẵn sàng chạy theo yêu cầu mới!")
+print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 5 giây tuần tự!")
 
 
 @app.route("/")
@@ -27,7 +27,7 @@ def home():
 def process_audio():
     global is_awake, last_active_time
 
-    # 1. Xử lý sự kiện hệ thống (boot, connected)
+    # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
     if request.is_json:
         data = request.get_json()
         event_type = data.get("type", "")
@@ -52,12 +52,12 @@ def process_audio():
                 return resp
         return "", 204
 
-    # 2. Kiểm tra xem đã quá 20 giây kể từ LẦN PHẢN HỒI TRƯỚC ĐÓ hay chưa
+    # 2. Kiểm tra timeout 60 giây kể từ lần tương tác trước
     if is_awake and (time.time() - last_active_time > SLEEP_TIMEOUT):
         is_awake = False
-        print("[Server] Đã quá 20 giây không có tương tác, tự động chuyển về chế độ NGỦ.")
+        print("[Server] Đã quá 60 giây không có tương tác, tự động chuyển về chế độ NGỦ.")
 
-    # 3. Nhận audio thô từ ESP32
+    # 3. Nhận audio thô 5 giây từ ESP32
     audio_data = request.data
     if len(audio_data) < 1000:
         resp = make_response("", 204)
@@ -83,7 +83,7 @@ def process_audio():
             ).lower()
             print(f"[Server] Nghe được: '{spoken_text}'")
     except sr.UnknownValueError:
-        print("[Server] Không nghe rõ nội dung.")
+        print("[Server] Không nghe rõ nội dung hoặc khoảng lặng 5 giây.")
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         return resp
@@ -101,12 +101,12 @@ def process_audio():
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
             print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
-            # Đang ngủ mà nói câu khác -> Lờ đi
+            # Nói lung tung khi đang ngủ -> Trả về 204 để ESP32 tiếp tục vòng lặp nghe lại
             resp = make_response("", 204)
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
             return resp
     else:
-  # Đang thức: Xử lý các câu lệnh chức năng
+        # Đang thức: Xử lý các câu lệnh chức năng
         if "nhiệt độ" in spoken_text or "nhiệt" in spoken_text:
             reply_text = "nhiệt độ 34 độ C"
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
@@ -116,15 +116,12 @@ def process_audio():
             )
         elif "thời tiết" in spoken_text:
             try:
-                # Tách lấy phần sau chữ "thời tiết" để làm tên tỉnh/thành phố
                 parts = spoken_text.split("thời tiết")
-                location = "HaNam"  # Mặc định nếu chỉ nói mỗi chữ "thời tiết"
+                location = "HaNam"
                 if len(parts) > 1 and parts[1].strip() != "":
                     raw_loc = parts[1].strip()
-                    location = raw_loc.replace(
-                        " ", ""
-                    )  # wttr.in hỗ trợ viết liền không dấu
-
+                    location = raw_loc.replace(" ", "")
+                
                 response = requests.get(
                     f"https://wttr.in/{location}?format=j1", timeout=5
                 )
@@ -134,9 +131,7 @@ def process_audio():
                     humidity = data["current_condition"][0]["humidity"]
                     reply_text = f"Nhiệt độ tại {location} là {temp} độ C và độ ẩm là {humidity} phần trăm"
                 else:
-                    reply_text = (
-                        f"Không tìm thấy dữ liệu thời tiết cho {location}"
-                    )
+                    reply_text = f"Không tìm thấy dữ liệu thời tiết cho {location}"
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Lỗi kết nối thời tiết"
@@ -149,7 +144,7 @@ def process_audio():
 
     print(f"[Server] Phản hồi: {reply_text}")
 
-    # 5. Tạo file âm thanh trả về
+    # 5. Tạo file âm thanh trả về cho ESP32 phát loa
     mp3_path = "response.mp3"
     raw_pcm_reply = "response.pcm"
 
@@ -159,7 +154,6 @@ def process_audio():
         f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
     )
 
-    # Cập nhật mốc thời gian 20s BẮT ĐẦU TỪ KHI SERVER TẠO XONG PHẢN HỒI (sau khi bot nói xong)
     if is_awake:
         last_active_time = time.time()
 
