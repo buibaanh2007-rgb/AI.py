@@ -100,7 +100,7 @@ def process_audio():
     # 4. Phân rã logic theo trạng thái THỨC hay NGỦ
     if not is_awake:
         # Đang ngủ: Chỉ bắt từ khóa đánh thức
-        wake_words = ["xin chào", "chào", "chào bot", "ê bot", "bật dậy", "dậy đi"]
+        wake_words = ["xin chào", "chào", "chào bot", "bật dậy", "dậy đi"]
         if any(word in spoken_text for word in wake_words):
             is_awake = True
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
@@ -148,29 +148,29 @@ def process_audio():
                 reply_text = "Loi ket noi thời tiết"
         elif any(op in spoken_text for op in ["cộng", "trừ", "nhân", "chia", "x", "+", "-", "*", "/"]):
             try:
-                # Thay thế các từ khóa và dấu x thành toán tử chuẩn của Python
-                expr = (spoken_text
-                        .replace("cộng", "+")
-                        .replace("trừ", "-")
-                        .replace("nhân", "*")
-                        .replace(" x ", "*")
-                        .replace(" x", "*")
-                        .replace("x ", "*")
-                        .replace("chia", "/"))
+                # Bước 1: Thay thế các từ khóa thành toán tử chuẩn
+                cleaned_text = (spoken_text
+                                .replace("cộng", "+")
+                                .replace("trừ", "-")
+                                .replace("nhân", "*")
+                                .replace(" x ", "*")
+                                .replace(" x", "*")
+                                .replace("x ", "*")
+                                .replace("chia", "/"))
                 
-                # Lọc lại chỉ giữ các ký tự toán học, số và khoảng trắng để đảm bảo an toàn khi dùng eval
-                allowed_chars = set("0123456789+-*/. ")
-                if all(c in allowed_chars for c in expr):
+                # Bước 2: Lọc bỏ hết các chữ cái thừa xung quanh, chỉ bốc lại số, dấu phép tính và dấu chấm
+                expr = "".join([c for c in cleaned_text if c in "0123456789+-*/. "]).strip()
+                
+                if expr:
                     result = eval(expr)
-                    # Làm tròn kết quả nếu là số thập phân
                     if isinstance(result, float) and not result.is_integer():
                         result = round(result, 2)
-                    reply_text = f"Kết quả bằng {result} ạ."
+                    reply_text = f"Kết quả bằng {result} ạ"
                 else:
-                    reply_text = "Em chỉ tính toán với các con số đơn giản thôi ạ."
+                    reply_text = "Em không tìm thấy phép tính nào hợp lệ."
             except Exception as e:
                 print(f"[Lỗi tính toán]: {e}")
-                reply_text = "Em chịu sếp ạ."
+                reply_text = "Em không thực hiện được phép tính này."
         elif "đi ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
             reply_text = "Vâng ạ"
