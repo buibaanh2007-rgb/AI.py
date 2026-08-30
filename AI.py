@@ -44,7 +44,7 @@ def process_audio():
                 f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
             )
 
-            if os.path.exists(raw_pcm_reply):
+            if os.path.exists(raw_pcm_reply) and os.path.getsize(raw_pcm_reply) > 0:
                 resp = make_response(
                     send_file(raw_pcm_reply, mimetype="application/octet-stream")
                 )
@@ -101,7 +101,6 @@ def process_audio():
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
             print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
-            # Nói lung tung khi đang ngủ -> Trả về 204 để ESP32 tiếp tục vòng lặp nghe lại
             resp = make_response("", 204)
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
             return resp
@@ -116,22 +115,26 @@ def process_audio():
             )
         elif "thời tiết" in spoken_text:
             try:
-                parts = spoken_text.split("thời tiết")
                 location = "HaNam"
+                parts = spoken_text.split("thời tiết")
                 if len(parts) > 1 and parts[1].strip() != "":
                     raw_loc = parts[1].strip()
-                    location = raw_loc.replace(" ", "")
-                
+                    raw_loc = raw_loc.replace("ở", "").replace("tại", "").strip()
+                    if raw_loc != "":
+                        location = raw_loc.replace(" ", "")
+
+                # Gọi API thời tiết với timeout an toàn
                 response = requests.get(
-                    f"https://wttr.in/{location}?format=j1", timeout=5
+                    f"https://wttr.in/{location}?format=j1", timeout=3
                 )
                 if response.status_code == 200:
                     data = response.json()
                     temp = data["current_condition"][0]["temp_C"]
                     humidity = data["current_condition"][0]["humidity"]
-                    reply_text = f"Nhiệt độ tại {location} là {temp} độ C và độ ẩm là {humidity} phần trăm"
+                    # Rút gọn câu chữ thời tiết để gTTS đọc mượt và không bị lỗi kí tự
+                    reply_text = f"Nhiệt độ {location} là {temp} độ và độ ẩm {humidity} phần trăm"
                 else:
-                    reply_text = f"Không tìm thấy dữ liệu thời tiết cho {location}"
+                    reply_text = f"Không tìm thấy thời tiết {location}"
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Lỗi kết nối thời tiết"
@@ -141,6 +144,10 @@ def process_audio():
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
         else:
             reply_text = "Tôi không hiểu yêu cầu này."
+
+    # Cho server "suy nghĩ" nhẹ 1.5 giây để gom data và render ổn định
+    print("[Server] Đang tổng hợp dữ liệu...")
+    time.sleep(1.5)
 
     print(f"[Server] Phản hồi: {reply_text}")
 
@@ -157,13 +164,15 @@ def process_audio():
     if is_awake:
         last_active_time = time.time()
 
-    if os.path.exists(raw_pcm_reply):
+    # Kiểm tra kĩ file PCM có thực sự tồn tại và có dung lượng > 0 hay không
+    if os.path.exists(raw_pcm_reply) and os.path.getsize(raw_pcm_reply) > 0:
         resp = make_response(
             send_file(raw_pcm_reply, mimetype="application/octet-stream")
         )
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         return resp
     else:
+        print("[Lỗi] File PCM phản hồi bị rỗng hoặc lỗi tạo từ ffmpeg!")
         return "", 500
 
 
