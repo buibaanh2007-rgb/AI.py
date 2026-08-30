@@ -130,7 +130,18 @@ def process_audio():
                         clean_loc = remove_accents(raw_loc)
                         location = clean_loc.replace(" ", "")
 
-                # Gọi API thời tiết với timeout an toàn
+                # Gộp câu chờ và kết quả thành 1 chuỗi hoàn chỉnh với dấu chấm ngắt nhịp để gTTS đọc mượt mà
+                reply_text = f"Đợi tôi một chút. Đang tra cứu thời tiết {location}..."
+                
+                # Render file tạm thông báo "đợi" trước để không bị nghẽn
+                wait_mp3 = "wait_temp.mp3"
+                wait_pcm = "wait_temp.pcm"
+                gTTS(text=reply_text, lang="vi").save(wait_mp3)
+                os.system(
+                    f"ffmpeg -y -i {wait_mp3} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {wait_pcm} > /dev/null 2>&1"
+                )
+
+                # Gọi API thời tiết thực tế
                 response = requests.get(
                     f"https://wttr.in/{location}?format=j1", timeout=3
                 )
@@ -139,13 +150,13 @@ def process_audio():
                     temp = data["current_condition"][0]["temp_C"]
                     humidity = data["current_condition"][0]["humidity"]
                     
-                    # Cắt ngắn gọn thành 3 vế cực kỳ súc tích để file PCM nhẹ, không bị tràn buffer trên ESP32
-                    reply_text = f"Thời tiết {location}. nhiệt độ {temp} độ C. độ ẩm {humidity} phần trăm"
+                    # Hoàn thiện thông tin đầy đủ sau khi API trả về
+                    reply_text = f"Đợi tôi một chút. Thời tiết {location}. Nhiệt độ {temp} độ C. Độ ẩm {humidity} phần trăm"
                 else:
                     reply_text = "Không tìm thấy thời tiết khu vực này"
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
-                reply_text = "Loi ket noi thời tiết"
+                reply_text = "Lỗi kết nối thời tiết"
         elif "ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
             reply_text = "Vâng ạ"
