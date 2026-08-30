@@ -1,4 +1,5 @@
 import requests
+from datetime import datetime
 from flask import Flask, request, send_file, make_response
 from gtts import gTTS
 import os
@@ -103,7 +104,7 @@ def process_audio():
         if "xin chào" in spoken_text or "chào" in spoken_text:
             is_awake = True
             last_active_time = time.time()  # Đánh dấu thời điểm vừa thức dậy
-            reply_text = "Có tôi đây, bạn cần giúp gì?"
+            reply_text = "Chào sếp, sếp cần giúp gì ạ?"
             print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
             # Đang ngủ mà nói câu khác thì lờ đi, không phản hồi
@@ -118,7 +119,10 @@ def process_audio():
         if "nhiệt độ" in spoken_text or "nhiệt" in spoken_text:
             reply_text = "nhiệt độ 34 độ C"
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
-            reply_text = "hiện tại là 3 giờ chiều"
+            now = datetime.now()
+            current_hour = now.strftime("%H")
+            current_minute = now.strftime("%M")
+            reply_text = f"Bây giờ là {current_hour} giờ {current_minute} phút"
         elif "thời tiết" in spoken_text:
             try:
                 response = requests.get("https://wttr.in/HaNam?format=j1", timeout=5)
