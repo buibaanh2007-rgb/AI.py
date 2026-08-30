@@ -106,22 +106,24 @@ def process_audio():
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
             return resp
     else:
-        # Đang thức: Xử lý các câu lệnh chức năng
+  # Đang thức: Xử lý các câu lệnh chức năng
         if "nhiệt độ" in spoken_text or "nhiệt" in spoken_text:
             reply_text = "nhiệt độ 34 độ C"
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
             now = datetime.now()
-            reply_text = f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
-    elif "thời tiết" in spoken_text or "thời tiết" in spoken_text:
+            reply_text = (
+                f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
+            )
+        elif "thời tiết" in spoken_text:
             try:
                 # Tách lấy phần sau chữ "thời tiết" để làm tên tỉnh/thành phố
                 parts = spoken_text.split("thời tiết")
                 location = "HaNam"  # Mặc định nếu chỉ nói mỗi chữ "thời tiết"
                 if len(parts) > 1 and parts[1].strip() != "":
-                    # Lấy từ tiếp theo sau chữ thời tiết và chuẩn hóa lại
                     raw_loc = parts[1].strip()
-                    # Loại bỏ các từ thừa nếu có, viết hoa chữ cái đầu hoặc giữ nguyên cho wttr.in xử lý
-                    location = raw_loc.replace(" ", "")  # wttr.in hỗ trợ viết liền không dấu hoặc có dấu
+                    location = raw_loc.replace(
+                        " ", ""
+                    )  # wttr.in hỗ trợ viết liền không dấu
 
                 response = requests.get(
                     f"https://wttr.in/{location}?format=j1", timeout=5
@@ -132,7 +134,9 @@ def process_audio():
                     humidity = data["current_condition"][0]["humidity"]
                     reply_text = f"Nhiệt độ tại {location} là {temp} độ C và độ ẩm là {humidity} phần trăm"
                 else:
-                    reply_text = f"Không tìm thấy dữ liệu thời tiết cho {location}"
+                    reply_text = (
+                        f"Không tìm thấy dữ liệu thời tiết cho {location}"
+                    )
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Lỗi kết nối thời tiết"
