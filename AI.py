@@ -112,19 +112,29 @@ def process_audio():
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
             now = datetime.now()
             reply_text = f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
-        elif "thời tiết" in spoken_text:
+       elif "thời tiết" in spoken_text or "thời tiết" in spoken_text:
             try:
+                # Tách lấy phần sau chữ "thời tiết" để làm tên tỉnh/thành phố
+                parts = spoken_text.split("thời tiết")
+                location = "HaNam"  # Mặc định nếu chỉ nói mỗi chữ "thời tiết"
+                if len(parts) > 1 and parts[1].strip() != "":
+                    # Lấy từ tiếp theo sau chữ thời tiết và chuẩn hóa lại
+                    raw_loc = parts[1].strip()
+                    # Loại bỏ các từ thừa nếu có, viết hoa chữ cái đầu hoặc giữ nguyên cho wttr.in xử lý
+                    location = raw_loc.replace(" ", "")  # wttr.in hỗ trợ viết liền không dấu hoặc có dấu
+
                 response = requests.get(
-                    "https://wttr.in/HaNam?format=j1", timeout=5
+                    f"https://wttr.in/{location}?format=j1", timeout=5
                 )
                 if response.status_code == 200:
                     data = response.json()
                     temp = data["current_condition"][0]["temp_C"]
                     humidity = data["current_condition"][0]["humidity"]
-                    reply_text = f"Nhiệt độ Hà Nam là {temp} độ C và độ ẩm là {humidity} phần trăm"
+                    reply_text = f"Nhiệt độ tại {location} là {temp} độ C và độ ẩm là {humidity} phần trăm"
                 else:
-                    reply_text = "Không lấy được dữ liệu thời tiết"
+                    reply_text = f"Không tìm thấy dữ liệu thời tiết cho {location}"
             except Exception as e:
+                print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Lỗi kết nối thời tiết"
         elif "ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
