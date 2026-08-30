@@ -1,5 +1,5 @@
 import requests
-from flask import Flask, request, send_file
+from flask import Flask, request, send_file, make_response
 from gtts import gTTS
 import os
 import speech_recognition as sr
@@ -48,11 +48,13 @@ def process_audio():
             )
 
             if os.path.exists(raw_pcm_reply):
-                return send_file(
-                    raw_pcm_reply, mimetype="application/octet-stream"
-                )
+                resp = make_response(send_file(raw_pcm_reply, mimetype="application/octet-stream"))
+                resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+                return resp
 
-        return "", 204
+        resp = make_response("", 204)
+        resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+        return resp
 
     # Kiểm tra xem đã quá 10 giây không tương tác hay chưa để tự động cho ngủ lại
     if is_awake and (time.time() - last_active_time > SLEEP_TIMEOUT):
@@ -62,7 +64,9 @@ def process_audio():
     # Xử lý luồng âm thanh thô do ESP32 gửi lên khi thu âm
     audio_data = request.data
     if len(audio_data) < 1000:
-        return "", 204
+        resp = make_response("", 204)
+        resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+        return resp
 
     raw_pcm_path = "input_temp.pcm"
     wav_path = "input_temp.wav"
@@ -85,7 +89,9 @@ def process_audio():
             print(f"[Server] Nghe được: '{spoken_text}'")
     except sr.UnknownValueError:
         print("[Server] Không nghe rõ nội dung.")
-        return "", 204
+        resp = make_response("", 204)
+        resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+        return resp
     except sr.RequestError as e:
         print(f"[Server] Lỗi kết nối Google STT: {e}")
         return "", 500
@@ -101,7 +107,9 @@ def process_audio():
             print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
             # Đang ngủ mà nói câu khác thì lờ đi, không phản hồi
-            return "", 204
+            resp = make_response("", 204)
+            resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+            return resp
 
     # 2. TRẠNG THÁI THỨC: Các lệnh khác được phép thực hiện và gia hạn thêm 10 giây
     else:
@@ -143,7 +151,9 @@ def process_audio():
     )
 
     if os.path.exists(raw_pcm_reply):
-        return send_file(raw_pcm_reply, mimetype="application/octet-stream")
+        resp = make_response(send_file(raw_pcm_reply, mimetype="application/octet-stream"))
+        resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+        return resp
     else:
         return "", 500
 
