@@ -26,7 +26,7 @@ return "AI Speaker Server Running!"
 def process_audio():
 global is_awake, last_active_time
 
-    # Xử lý sự kiện hệ thống (như lúc boot/kết nối từ ESP32)
+    
     if request.is_json:
         data = request.get_json()
         event_type = data.get("type", "")
