@@ -11,7 +11,7 @@ recognizer = sr.Recognizer()
 # Biến toàn cục quản lý trạng thái thức/ngủ và timeout 10 giây
 is_awake = False
 last_active_time = 0
-SLEEP_TIMEOUT = 10
+SLEEP_TIMEOUT = 15
 
 print("[Server] Đã sẵn sàng chạy theo yêu cầu mới!")
 
