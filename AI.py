@@ -99,7 +99,7 @@ def process_audio():
 
     # 4. Phân rã logic theo trạng thái THỨC hay NGỦ
     if not is_awake:
-        # Đang ngủ: Chỉ bắt từ khóa đánh thức (dùng list + any cho gọn gàng và dễ mở rộng)
+        # Đang ngủ: Chỉ bắt từ khóa đánh thức
         wake_words = ["xin chào", "chào", "chào bot", "ê bot", "bật dậy", "dậy đi"]
         if any(word in spoken_text for word in wake_words):
             is_awake = True
@@ -146,10 +146,17 @@ def process_audio():
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Loi ket noi thời tiết"
-        elif "cộng" in spoken_text or "trừ" in spoken_text or "nhân" in spoken_text or "chia" in spoken_text:
+        elif any(op in spoken_text for op in ["cộng", "trừ", "nhân", "chia", "x", "+", "-", "*", "/"]):
             try:
-                # Thay thế các từ khóa tiếng Việt thành toán tử chuẩn của Python
-                expr = spoken_text.replace("cộng", "+").replace("trừ", "-").replace("nhân", "*").replace("chia", "/")
+                # Thay thế các từ khóa và dấu x thành toán tử chuẩn của Python
+                expr = (spoken_text
+                        .replace("cộng", "+")
+                        .replace("trừ", "-")
+                        .replace("nhân", "*")
+                        .replace(" x ", "*")
+                        .replace(" x", "*")
+                        .replace("x ", "*")
+                        .replace("chia", "/"))
                 
                 # Lọc lại chỉ giữ các ký tự toán học, số và khoảng trắng để đảm bảo an toàn khi dùng eval
                 allowed_chars = set("0123456789+-*/. ")
