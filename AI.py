@@ -44,8 +44,10 @@ def process_audio():
 
             tts = gTTS(text=reply_text, lang="vi")
             tts.save(mp3_path)
+            
+            # Dùng 16000 Hz đúng như chuẩn code gốc của sếp và giảm âm lượng chống rè
             os.system(
-                f"ffmpeg -y -i {mp3_path} -af volume=0.5 -f s16le -acodec pcm_s16le -ar 24000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
+                f"ffmpeg -y -i {mp3_path} -af volume=0.5 -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
             )
 
             if os.path.exists(raw_pcm_reply):
@@ -84,9 +86,9 @@ def process_audio():
     with open(raw_pcm_path, "wb") as f:
         f.write(audio_data)
 
-    # Chuyển đổi PCM sang WAV bằng ffmpeg với tần số 24000 Hz khớp bên ESP32
+    # Chuyển đổi PCM sang WAV bằng ffmpeg với tần số 16000 Hz chuẩn của sếp
     os.system(
-        f"ffmpeg -y -f s16le -ar 24000 -ac 1 -i {raw_pcm_path} {wav_path} > /dev/null 2>&1"
+        f"ffmpeg -y -f s16le -ar 16000 -ac 1 -i {raw_pcm_path} {wav_path} > /dev/null 2>&1"
     )
 
     spoken_text = ""
@@ -121,9 +123,9 @@ def process_audio():
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
             return resp
 
-    # 2. TRẠNG THÁI THỨC: Các lệnh khác được phép thực hiện và gia hạn thêm 20 giây
+    # 2. TRẠNG THÁI THỨC: Các lệnh khác được phép thực hiện và gia hạn thêm thời gian
     else:
-        last_active_time = time.time()  # Làm mới mốc 20 giây khi có lệnh mới
+        last_active_time = time.time()  # Làm mới mốc thời gian khi có lệnh mới
 
         if "nhiệt độ" in spoken_text or "nhiệt" in spoken_text:
             reply_text = "nhiệt độ 34 độ C"
@@ -160,11 +162,11 @@ def process_audio():
     tts.save(mp3_path)
 
     os.system(
-        f"ffmpeg -y -i {mp3_path} -af volume=0.5 -f s16le -acodec pcm_s16le -ar 24000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
+        f"ffmpeg -y -i {mp3_path} -af volume=0.5 -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
     )
 
     if os.path.exists(raw_pcm_reply):
-        # Dùng generator cắt chunk 512 bytes truyền qua stream để chống tràn đệm và chống rè tiếng trên ESP32
+        # Dùng generator cắt chunk 512 bytes truyền qua stream để chống vấp và chống rè tiếng
         def generate_chunks():
             chunk_size = 512
             with open(raw_pcm_reply, "rb") as f:
