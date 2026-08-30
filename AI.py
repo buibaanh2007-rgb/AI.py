@@ -165,12 +165,12 @@ def process_audio():
                     # Làm tròn kết quả nếu là số thập phân
                     if isinstance(result, float) and not result.is_integer():
                         result = round(result, 2)
-                    reply_text = f"Kết quả bằng {result}"
+                    reply_text = f"Kết quả bằng {result} ạ."
                 else:
                     reply_text = "Em chỉ tính toán với các con số đơn giản thôi ạ."
             except Exception as e:
                 print(f"[Lỗi tính toán]: {e}")
-                reply_text = "Em không thực hiện được phép tính này."
+                reply_text = "Em chịu sếp ạ."
         elif "đi ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
             reply_text = "Vâng ạ"
