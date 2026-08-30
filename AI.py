@@ -26,11 +26,11 @@ return "AI Speaker Server Running!"
 def process_audio():
 global is_awake, last_active_time
 if request.is_json:
-        data = request.get_json()
-        event_type = data.get("type", "")
+   data = request.get_json()
+   event_type = data.get("type", "")
 
-        reply_text = ""
-        if event_type == "boot" or event_type == "connected":
+   reply_text = ""
+if event_type == "boot" or event_type == "connected":
             reply_text = "Kết nối server thành công"
             # Sau khi khởi động thành công, hệ thống đưa về trạng thái NGỦ để chờ lệnh "xin chào"
             is_awake = False
