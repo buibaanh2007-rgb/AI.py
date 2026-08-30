@@ -145,7 +145,7 @@ def process_audio():
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Loi ket noi thời tiết"
-        elif "ngủ đi" in spoken_text or "tắt đi" in spoken_text:
+        elif "đi ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
             reply_text = "Vâng ạ"
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
