@@ -99,8 +99,9 @@ def process_audio():
 
     # 4. Phân rã logic theo trạng thái THỨC hay NGỦ
     if not is_awake:
-        # Đang ngủ: Chỉ bắt từ khóa đánh thức
-        if "xin chào" in spoken_text or "chào" in spoken_text:
+        # Đang ngủ: Chỉ bắt từ khóa đánh thức (dùng list + any cho gọn gàng và dễ mở rộng)
+        wake_words = ["xin chào", "chào", "chào bot", "ê bot", "bật dậy", "dậy đi"]
+        if any(word in spoken_text for word in wake_words):
             is_awake = True
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
             print("[Server] Trạng thái: ĐÃ THỨC.")
@@ -145,6 +146,24 @@ def process_audio():
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Loi ket noi thời tiết"
+        elif "cộng" in spoken_text or "trừ" in spoken_text or "nhân" in spoken_text or "chia" in spoken_text:
+            try:
+                # Thay thế các từ khóa tiếng Việt thành toán tử chuẩn của Python
+                expr = spoken_text.replace("cộng", "+").replace("trừ", "-").replace("nhân", "*").replace("chia", "/")
+                
+                # Lọc lại chỉ giữ các ký tự toán học, số và khoảng trắng để đảm bảo an toàn khi dùng eval
+                allowed_chars = set("0123456789+-*/. ")
+                if all(c in allowed_chars for c in expr):
+                    result = eval(expr)
+                    # Làm tròn kết quả nếu là số thập phân
+                    if isinstance(result, float) and not result.is_integer():
+                        result = round(result, 2)
+                    reply_text = f"Kết quả bằng {result}"
+                else:
+                    reply_text = "Em chỉ tính toán với các con số đơn giản thôi ạ."
+            except Exception as e:
+                print(f"[Lỗi tính toán]: {e}")
+                reply_text = "Em không thực hiện được phép tính này."
         elif "đi ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
             reply_text = "Vâng ạ"
