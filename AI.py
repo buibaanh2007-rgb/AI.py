@@ -19,7 +19,7 @@ print("[Server] Đã sẵn sàng chạy theo yêu cầu mới!")
 
 @app.route("/")
 def home():
-    return "AI Speaker Server Running!"
+return "AI Speaker Server Running!"
 
 
 @app.route("/process-audio", methods=["POST"])
