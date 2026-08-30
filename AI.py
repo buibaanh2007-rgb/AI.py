@@ -19,12 +19,12 @@ print("[Server] Đã sẵn sàng chạy theo yêu cầu mới!")
 
 @app.route("/")
 def home():
-    return "AI Speaker Server Running!"
+return "AI Speaker Server Running!"
 
 
 @app.route("/process-audio", methods=["POST"])
 def process_audio():
-    global is_awake, last_active_time
+global is_awake, last_active_time
 
     # Xử lý sự kiện hệ thống (như lúc boot/kết nối từ ESP32)
     if request.is_json:
