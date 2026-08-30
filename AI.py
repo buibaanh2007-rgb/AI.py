@@ -86,8 +86,8 @@ def process_audio():
         f.write(audio_data)
 
     # Chuyển đổi PCM sang WAV bằng ffmpeg
-    os.system(
-        f"ffmpeg -y -f s16le -ar 16000 -ac 1 -i {raw_pcm_path} {wav_path} > /dev/null 2>&1"
+   os.system(
+        f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 24000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
     )
 
     spoken_text = ""
@@ -159,8 +159,8 @@ def process_audio():
     tts = gTTS(text=reply_text, lang="vi")
     tts.save(mp3_path)
 
-    os.system(
-        f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
+   os.system(
+        f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 24000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
     )
 
     if os.path.exists(raw_pcm_reply):
