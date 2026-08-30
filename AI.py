@@ -148,7 +148,7 @@ def process_audio():
                 reply_text = "Loi ket noi thời tiết"
         elif "ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
-            reply_text = "Tôi đi ngủ đây."
+            reply_text = "Vâng ạ"
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
         else:
             reply_text = "Tôi không hiểu yêu cầu này."
