@@ -112,7 +112,7 @@ def process_audio():
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
             now = datetime.now()
             reply_text = f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
-       elif "thời tiết" in spoken_text or "thời tiết" in spoken_text:
+    elif "thời tiết" in spoken_text or "thời tiết" in spoken_text:
             try:
                 # Tách lấy phần sau chữ "thời tiết" để làm tên tỉnh/thành phố
                 parts = spoken_text.split("thời tiết")
