@@ -25,8 +25,6 @@ return "AI Speaker Server Running!"
 @app.route("/process-audio", methods=["POST"])
 def process_audio():
 global is_awake, last_active_time
-
-    
     if request.is_json:
         data = request.get_json()
         event_type = data.get("type", "")
