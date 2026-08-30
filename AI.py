@@ -20,7 +20,7 @@ print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 5 giây tuần t�
 
 
 def remove_accents(input_str):
-    nfkd_form = unicodedata.normalize("NFKD", input_str)
+  nfkd_form = unicodedata.normalize("NFKD", input_str)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
 
