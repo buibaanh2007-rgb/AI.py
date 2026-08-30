@@ -97,8 +97,6 @@ def process_audio():
         print(f"[Server] Lỗi kết nối Google STT: {e}")
         return "", 500
 
-    reply_text = ""
-
     # 4. Phân rã logic theo trạng thái THỨC hay NGỦ
     if not is_awake:
         # Đang ngủ: Chỉ bắt từ khóa đánh thức
@@ -129,7 +127,6 @@ def process_audio():
                         raw_loc.replace("ở", "").replace("tại", "").strip()
                     )
                     if raw_loc != "":
-                        # Tự động loại bỏ dấu tiếng Việt và khoảng trắng để wttr.in nhận diện mọi tỉnh thành chuẩn xác
                         clean_loc = remove_accents(raw_loc)
                         location = clean_loc.replace(" ", "")
 
@@ -141,13 +138,14 @@ def process_audio():
                     data = response.json()
                     temp = data["current_condition"][0]["temp_C"]
                     humidity = data["current_condition"][0]["humidity"]
-                    # Sử dụng text hoàn toàn không dấu cho gTTS và stream mạng để loại bỏ triệt để lỗi font/ký tự đặc biệt
-                    reply_text = f"Nhiệt độ tai {location} la {temp} do va do am {humidity} phan tram"
+                    
+                    # Cắt ngắn gọn thành 3 vế cực kỳ súc tích để file PCM nhẹ, không bị tràn buffer trên ESP32
+                    reply_text = f"Thời tiết {location}. nhiệt độ {temp} độ C. độ ẩm {humidity} phần trăm"
                 else:
-                    reply_text = "Khong tim thay thoi tiet khu vuc nay"
+                    reply_text = "Không tìm thấy thời tiết khu vực này"
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
-                reply_text = "Loi ket noi thoi tiet"
+                reply_text = "Loi ket noi thời tiết"
         elif "ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
             reply_text = "Tôi đi ngủ đây."
