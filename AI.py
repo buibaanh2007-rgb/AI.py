@@ -9,7 +9,7 @@ import time
 app = Flask(__name__)
 recognizer = sr.Recognizer()
 
-# Biến toàn cục quản lý trạng thái thức/ngủ và timeout 10 giây
+# Biến toàn cục quản lý trạng thái thức/ngủ và timeout 15 giây
 is_awake = False
 last_active_time = 0
 SLEEP_TIMEOUT = 20
@@ -34,7 +34,6 @@ def process_audio():
         reply_text = ""
         if event_type == "boot" or event_type == "connected":
             reply_text = "Kết nối server thành công"
-            # Sau khi khởi động thành công, hệ thống đưa về trạng thái NGỦ để chờ lệnh "xin chào"
             is_awake = False
 
         if reply_text:
@@ -44,12 +43,23 @@ def process_audio():
 
             tts = gTTS(text=reply_text, lang="vi")
             tts.save(mp3_path)
+            
+            # Cắt chunk âm thanh khi stream qua generator để chống tràn đệm phần cứng ESP32
             os.system(
                 f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
             )
 
             if os.path.exists(raw_pcm_reply):
-                resp = make_response(send_file(raw_pcm_reply, mimetype="application/octet-stream"))
+                def generate_chunks():
+                    chunk_size = 512
+                    with open(raw_pcm_reply, "rb") as f:
+                        while True:
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            yield chunk
+
+                resp = make_response(Response(generate_chunks(), mimetype="application/octet-stream"))
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
                 return resp
 
@@ -57,10 +67,10 @@ def process_audio():
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         return resp
 
-    # Kiểm tra xem đã quá 10 giây không tương tác hay chưa để tự động cho ngủ lại
+    # Kiểm tra xem đã quá 15 giây không tương tác hay chưa để tự động cho ngủ lại
     if is_awake and (time.time() - last_active_time > SLEEP_TIMEOUT):
         is_awake = False
-        print("[Server] Đã quá 10 giây không có lệnh, chuyển về chế độ NGỦ.")
+        print("[Server] Đã quá 15 giây không có lệnh, chuyển về chế độ NGỦ.")
 
     # Xử lý luồng âm thanh thô do ESP32 gửi lên khi thu âm
     audio_data = request.data
@@ -103,18 +113,17 @@ def process_audio():
     if not is_awake:
         if "xin chào" in spoken_text or "chào" in spoken_text:
             is_awake = True
-            last_active_time = time.time()  # Đánh dấu thời điểm vừa thức dậy
+            last_active_time = time.time()  
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
             print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
-            # Đang ngủ mà nói câu khác thì lờ đi, không phản hồi
             resp = make_response("", 204)
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
             return resp
 
-    # 2. TRẠNG THÁI THỨC: Các lệnh khác được phép thực hiện và gia hạn thêm 10 giây
+    # 2. TRẠNG THÁI THỨC: Các lệnh khác được phép thực hiện và gia hạn thêm 15 giây
     else:
-        last_active_time = time.time()  # Làm mới mốc 10 giây khi có lệnh mới
+        last_active_time = time.time()  
 
         if "nhiệt độ" in spoken_text or "nhiệt" in spoken_text:
             reply_text = "nhiệt độ 34 độ C"
@@ -155,7 +164,17 @@ def process_audio():
     )
 
     if os.path.exists(raw_pcm_reply):
-        resp = make_response(send_file(raw_pcm_reply, mimetype="application/octet-stream"))
+        # Truyền luồng audio theo dạng generator chia nhỏ chunk (512 bytes) giúp chống vấp, rè tiếng trên loa ESP32
+        def generate_chunks():
+            chunk_size = 512
+            with open(raw_pcm_reply, "rb") as f:
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        resp = make_response(Response(generate_chunks(), mimetype="application/octet-stream"))
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         return resp
     else:
