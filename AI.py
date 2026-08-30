@@ -1,6 +1,7 @@
 from datetime import datetime
 import os
 import time
+import unicodedata
 
 from flask import Flask, make_response, request, send_file
 from gtts import gTTS
@@ -16,6 +17,11 @@ last_active_time = 0
 SLEEP_TIMEOUT = 60
 
 print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 5 giây tuần tự!")
+
+
+def remove_accents(input_str):
+    nfkd_form = unicodedata.normalize("NFKD", input_str)
+    return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
 
 @app.route("/")
@@ -119,9 +125,13 @@ def process_audio():
                 parts = spoken_text.split("thời tiết")
                 if len(parts) > 1 and parts[1].strip() != "":
                     raw_loc = parts[1].strip()
-                    raw_loc = raw_loc.replace("ở", "").replace("tại", "").strip()
+                    raw_loc = (
+                        raw_loc.replace("ở", "").replace("tại", "").strip()
+                    )
                     if raw_loc != "":
-                        location = raw_loc.replace(" ", "")
+                        # Tự động loại bỏ dấu tiếng Việt và khoảng trắng để wttr.in nhận diện mọi tỉnh thành chuẩn xác
+                        clean_loc = remove_accents(raw_loc)
+                        location = clean_loc.replace(" ", "")
 
                 # Gọi API thời tiết với timeout an toàn
                 response = requests.get(
@@ -131,13 +141,13 @@ def process_audio():
                     data = response.json()
                     temp = data["current_condition"][0]["temp_C"]
                     humidity = data["current_condition"][0]["humidity"]
-                    # Rút gọn câu chữ thời tiết để gTTS đọc mượt và không bị lỗi kí tự
-                    reply_text = f"Nhiệt độ {location} là {temp} độ và độ ẩm {humidity} phần trăm"
+                    # Sử dụng text hoàn toàn không dấu cho gTTS và stream mạng để loại bỏ triệt để lỗi font/ký tự đặc biệt
+                    reply_text = f"Nhiệt độ tai {location} la {temp} do va do am {humidity} phan tram"
                 else:
-                    reply_text = f"Không tìm thấy thời tiết {location}"
+                    reply_text = "Khong tim thay thoi tiet khu vuc nay"
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
-                reply_text = "Lỗi kết nối thời tiết"
+                reply_text = "Loi ket noi thoi tiet"
         elif "ngủ đi" in spoken_text or "tắt đi" in spoken_text:
             is_awake = False
             reply_text = "Tôi đi ngủ đây."
