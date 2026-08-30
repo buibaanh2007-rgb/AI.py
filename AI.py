@@ -100,7 +100,7 @@ def process_audio():
     # 4. Phân rã logic theo trạng thái THỨC hay NGỦ
     if not is_awake:
         # Đang ngủ: Chỉ bắt từ khóa đánh thức
-        if "xin chào" in spoken_text or "chào" in spoken_text:
+        if "xin chào" in spoken_text or "thức dậy" in spoken_text:
             is_awake = True
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
             print("[Server] Trạng thái: ĐÃ THỨC.")
