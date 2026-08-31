@@ -118,15 +118,27 @@ def process_audio():
             return resp
     else:
         # Đang thức: Xử lý các câu lệnh chức năng
-        if "nhiệt độ" in spoken_text or "nhiệt" in spoken_text:
-            reply_text = "nhiệt độ 34 độ C"
+        if "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
+            # Lấy thông tin thực tế từ Header do S3 đẩy lên từ UART của H3
+            room_temp = request.headers.get("X-Room-Temp", "25")
+            room_hum = request.headers.get("X-Room-Hum", "50")
+            
+            try:
+                room_temp = str(round(float(room_temp), 1))
+                room_hum = str(round(float(room_hum), 1))
+            except:
+                pass
+
+            reply_text = f"Nhiệt độ {room_temp} độ C và độ ẩm {room_hum} phần trăm"
             current_bot_mode = "WEATHER"  # Yêu cầu H3 chuyển sang màn hình nhiệt độ
+            
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
             now = datetime.now()
             reply_text = (
                 f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
             )
             current_bot_mode = "CLOCK"  # Yêu cầu H3 chuyển sang màn hình đồng hồ
+            
         elif "thời tiết" in spoken_text:
             current_bot_mode = "WEATHER"
             try:
@@ -156,6 +168,7 @@ def process_audio():
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Loi ket noi thời tiết"
+                
         elif any(op in spoken_text for op in ["cộng", "trừ", "nhân", "chia", "x", "+", "-", "*", "/"]):
             try:
                 cleaned_text = (spoken_text
@@ -176,16 +189,17 @@ def process_audio():
                         result = round(result, 2)
                     reply_text = f"Kết quả bằng {result} ạ"
                 else:
-                    reply_text = "Em không tìm thấy phép tính nào hợp lệ."
+                    reply_text = "Mời sếp đọc lại giúp em."
             except Exception as e:
                 print(f"[Lỗi tính toán]: {e}")
                 reply_text = "Em không thực hiện được phép tính này."
-        elif "đi ngủ đi" in spoken_text or "tắt đi" in spoken_text:
+                
+        elif "đi ngủ đi" in spoken_text or "ngủ đi" in spoken_text:
             is_awake = False
             reply_text = "Vâng ạ"
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
         else:
-            reply_text = "Tôi không hiểu yêu cầu này."
+            reply_text = "Sếp nói lại đi."
 
     # Cho server "suy nghĩ" nhẹ 1.5 giây để gom data và render ổn định
     print("[Server] Đang tổng hợp dữ liệu...")
