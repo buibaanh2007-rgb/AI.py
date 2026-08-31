@@ -33,7 +33,7 @@ def home():
 def process_audio():
     global is_awake, last_active_time
 
-    # Biến lưu chế độ hiển thị màn hình (Mặc định là mắt robot / không đổi)
+    # Biến lưu chế độ hiển thị màn hình (Mặc định là giữ nguyên / không đổi)
     current_bot_mode = "DEFAULT"
 
     # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
@@ -58,7 +58,7 @@ def process_audio():
                     send_file(raw_pcm_reply, mimetype="application/octet-stream")
                 )
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
-                resp.headers["Bot-Mode"] = "DEFAULT"
+                resp.headers["Bot-Mode"] = "SET_MODE_0"
                 return resp
         return "", 204
 
@@ -110,6 +110,7 @@ def process_audio():
         if any(word in spoken_text for word in wake_words):
             is_awake = True
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
+            current_bot_mode = "SET_MODE_1"  # Đánh thức ép H3 sang Mode 1
             print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
             resp = make_response("", 204)
@@ -130,17 +131,17 @@ def process_audio():
                 pass
 
             reply_text = f"Nhiệt độ {room_temp} độ C và độ ẩm {room_hum} phần trăm"
-            current_bot_mode = "WEATHER"  # Yêu cầu H3 chuyển sang màn hình nhiệt độ
+            current_bot_mode = "SET_MODE_3"  # Yêu cầu chuyển sang Mode 3 (Nhiệt độ phòng)
             
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
             now = datetime.now()
             reply_text = (
                 f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
             )
-            current_bot_mode = "CLOCK"  # Yêu cầu H3 chuyển sang màn hình đồng hồ
+            current_bot_mode = "SET_MODE_2"  # Yêu cầu chuyển sang Mode 2 (Đồng hồ)
             
         elif "thời tiết" in spoken_text:
-            current_bot_mode = "WEATHER"
+            current_bot_mode = "SET_MODE_3"  # Hoặc hiển thị thông tin nhiệt độ/thời tiết
             try:
                 location = "HaNam"
                 parts = spoken_text.split("thời tiết")
@@ -167,7 +168,7 @@ def process_audio():
                     reply_text = "Không tìm thấy thời tiết khu vực này"
             except Exception as e:
                 print(f"[Lỗi thời tiết chi tiết]: {e}")
-                reply_text = "Loi ket noi thời tiết"
+                reply_text = "Lỗi kết nối thời tiết"
                 
         elif any(op in spoken_text for op in ["cộng", "trừ", "nhân", "chia", "x", "+", "-", "*", "/"]):
             try:
@@ -197,9 +198,11 @@ def process_audio():
         elif "đi ngủ đi" in spoken_text or "ngủ đi" in spoken_text:
             is_awake = False
             reply_text = "Vâng ạ"
+            current_bot_mode = "SET_MODE_0"  # Ép H3 về Mode 0 (Mặt ngủ)
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
         else:
             reply_text = "Sếp nói lại đi."
+            current_bot_mode = "SET_MODE_1"  # Vẫn ở trạng thái tỉnh táo (Mode 1)
 
     # Cho server "suy nghĩ" nhẹ 1.5 giây để gom data và render ổn định
     print("[Server] Đang tổng hợp dữ liệu...")
@@ -226,7 +229,7 @@ def process_audio():
             send_file(raw_pcm_reply, mimetype="application/octet-stream")
         )
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
-        resp.headers["Bot-Mode"] = current_bot_mode  # Gửi kèm header chỉ thị mode màn hình xuống S3
+        resp.headers["Bot-Mode"] = current_bot_mode  # Gửi thẳng lệnh SET_MODE_x xuống S3 để chuyển giao diện
         return resp
     else:
         print("[Lỗi] File PCM phản hồi bị rỗng hoặc lỗi tạo từ ffmpeg!")
