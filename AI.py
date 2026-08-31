@@ -33,6 +33,9 @@ def home():
 def process_audio():
     global is_awake, last_active_time
 
+    # Biến lưu chế độ hiển thị màn hình (Mặc định là mắt robot / không đổi)
+    current_bot_mode = "DEFAULT"
+
     # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
     if request.is_json:
         data = request.get_json()
@@ -55,6 +58,7 @@ def process_audio():
                     send_file(raw_pcm_reply, mimetype="application/octet-stream")
                 )
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+                resp.headers["Bot-Mode"] = "DEFAULT"
                 return resp
         return "", 204
 
@@ -68,6 +72,7 @@ def process_audio():
     if len(audio_data) < 1000:
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+        resp.headers["Bot-Mode"] = "DEFAULT"
         return resp
 
     raw_pcm_path = "input_temp.pcm"
@@ -92,6 +97,7 @@ def process_audio():
         print("[Server] Không nghe rõ nội dung hoặc khoảng lặng 5 giây.")
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+        resp.headers["Bot-Mode"] = "DEFAULT"
         return resp
     except sr.RequestError as e:
         print(f"[Server] Lỗi kết nối Google STT: {e}")
@@ -108,17 +114,21 @@ def process_audio():
         else:
             resp = make_response("", 204)
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+            resp.headers["Bot-Mode"] = "DEFAULT"
             return resp
     else:
         # Đang thức: Xử lý các câu lệnh chức năng
         if "nhiệt độ" in spoken_text or "nhiệt" in spoken_text:
             reply_text = "nhiệt độ 34 độ C"
+            current_bot_mode = "WEATHER"  # Yêu cầu H3 chuyển sang màn hình nhiệt độ
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
             now = datetime.now()
             reply_text = (
                 f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
             )
+            current_bot_mode = "CLOCK"  # Yêu cầu H3 chuyển sang màn hình đồng hồ
         elif "thời tiết" in spoken_text:
+            current_bot_mode = "WEATHER"
             try:
                 location = "HaNam"
                 parts = spoken_text.split("thời tiết")
@@ -148,7 +158,6 @@ def process_audio():
                 reply_text = "Loi ket noi thời tiết"
         elif any(op in spoken_text for op in ["cộng", "trừ", "nhân", "chia", "x", "+", "-", "*", "/"]):
             try:
-                # Bước 1: Thay thế các từ khóa thành toán tử chuẩn
                 cleaned_text = (spoken_text
                                 .replace("cộng", "+")
                                 .replace("trừ", "-")
@@ -156,9 +165,9 @@ def process_audio():
                                 .replace(" x ", "*")
                                 .replace(" x", "*")
                                 .replace("x ", "*")
-                                .replace("chia", "/"))
+                                .replace("chia", "/")
+                )
                 
-                # Bước 2: Lọc bỏ hết các chữ cái thừa xung quanh, chỉ bốc lại số, dấu phép tính và dấu chấm
                 expr = "".join([c for c in cleaned_text if c in "0123456789+-*/. "]).strip()
                 
                 if expr:
@@ -182,7 +191,7 @@ def process_audio():
     print("[Server] Đang tổng hợp dữ liệu...")
     time.sleep(1.5)
 
-    print(f"[Server] Phản hồi: {reply_text}")
+    print(f"[Server] Phản hồi: {reply_text} | Bot-Mode: {current_bot_mode}")
 
     # 5. Tạo file âm thanh trả về cho ESP32 phát loa
     mp3_path = "response.mp3"
@@ -203,6 +212,7 @@ def process_audio():
             send_file(raw_pcm_reply, mimetype="application/octet-stream")
         )
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+        resp.headers["Bot-Mode"] = current_bot_mode  # Gửi kèm header chỉ thị mode màn hình xuống S3
         return resp
     else:
         print("[Lỗi] File PCM phản hồi bị rỗng hoặc lỗi tạo từ ffmpeg!")
