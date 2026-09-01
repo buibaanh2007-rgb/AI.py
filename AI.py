@@ -118,6 +118,7 @@ def process_audio():
             return resp
     else:
         if "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
+            # Lấy chính xác tên Header X-Room-Temp và X-Room-Hum mà ESP32-S3 vừa truyền lên
             room_temp = request.headers.get("X-Room-Temp", "25")
             room_hum = request.headers.get("X-Room-Hum", "50")
             
@@ -200,7 +201,6 @@ def process_audio():
             reply_text = "Sếp nói lại đi."
             current_bot_mode = "SET_MODE_1" 
 
-    # Đã lược bỏ hoàn toàn lệnh time.sleep(1.5) để tăng tốc độ phản hồi tối đa
     print(f"[Server] Phản hồi: {reply_text} | Bot-Mode: {current_bot_mode}")
 
     # 5. Tạo file âm thanh trả về cho ESP32 phát loa
