@@ -16,7 +16,7 @@ is_awake = False
 last_active_time = 0
 SLEEP_TIMEOUT = 60
 
-print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 5 giây tuần tự!")
+print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm tối ưu 2 giây không độ trễ!")
 
 
 def remove_accents(input_str):
@@ -33,7 +33,6 @@ def home():
 def process_audio():
     global is_awake, last_active_time
 
-    # Biến lưu chế độ hiển thị màn hình (Mặc định là giữ nguyên / không đổi)
     current_bot_mode = "DEFAULT"
 
     # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
@@ -67,9 +66,10 @@ def process_audio():
         is_awake = False
         print("[Server] Đã quá 60 giây không có tương tác, tự động chuyển về chế độ NGỦ.")
 
-    # 3. Nhận audio thô 5 giây từ ESP32
+    # 3. Nhận audio thô từ ESP32 (với gói 2 giây tương đương ~64000 bytes)
     audio_data = request.data
-    if len(audio_data) < 1000:
+    # Hạ ngưỡng nhận diện xuống vì gói 2 giây có dung lượng nhỏ hơn gói 5 giây cũ
+    if len(audio_data) < 500:
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "DEFAULT"
@@ -94,7 +94,7 @@ def process_audio():
             ).lower()
             print(f"[Server] Nghe được: '{spoken_text}'")
     except sr.UnknownValueError:
-        print("[Server] Không nghe rõ nội dung hoặc khoảng lặng 5 giây.")
+        print("[Server] Không nghe rõ nội dung hoặc khoảng lặng.")
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "DEFAULT"
@@ -105,12 +105,11 @@ def process_audio():
 
     # 4. Phân rã logic theo trạng thái THỨC hay NGỦ
     if not is_awake:
-        # Đang ngủ: Chỉ bắt từ khóa đánh thức
         wake_words = ["xin chào", "chào", "chào bot", "bật dậy", "dậy đi"]
         if any(word in spoken_text for word in wake_words):
             is_awake = True
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
-            current_bot_mode = "SET_MODE_1"  # Đánh thức ép H3 sang Mode 1
+            current_bot_mode = "SET_MODE_1" 
             print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
             resp = make_response("", 204)
@@ -118,9 +117,7 @@ def process_audio():
             resp.headers["Bot-Mode"] = "DEFAULT"
             return resp
     else:
-        # Đang thức: Xử lý các câu lệnh chức năng
         if "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
-            # Lấy thông tin thực tế từ Header do S3 đẩy lên từ UART của H3
             room_temp = request.headers.get("X-Room-Temp", "25")
             room_hum = request.headers.get("X-Room-Hum", "50")
             
@@ -131,17 +128,17 @@ def process_audio():
                 pass
 
             reply_text = f"Nhiệt độ {room_temp} độ C và độ ẩm {room_hum} phần trăm"
-            current_bot_mode = "SET_MODE_3"  # Yêu cầu chuyển sang Mode 3 (Nhiệt độ phòng)
+            current_bot_mode = "SET_MODE_3" 
             
         elif "mấy giờ rồi" in spoken_text or "giờ" in spoken_text:
             now = datetime.now()
             reply_text = (
                 f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
             )
-            current_bot_mode = "SET_MODE_2"  # Yêu cầu chuyển sang Mode 2 (Đồng hồ)
+            current_bot_mode = "SET_MODE_2" 
             
         elif "thời tiết" in spoken_text:
-            current_bot_mode = "SET_MODE_3"  # Hoặc hiển thị thông tin nhiệt độ/thời tiết
+            current_bot_mode = "SET_MODE_3" 
             try:
                 location = "HaNam"
                 parts = spoken_text.split("thời tiết")
@@ -154,7 +151,6 @@ def process_audio():
                         clean_loc = remove_accents(raw_loc)
                         location = clean_loc.replace(" ", "")
 
-                # Gọi API thời tiết với timeout an toàn
                 response = requests.get(
                     f"https://wttr.in/{location}?format=j1", timeout=3
                 )
@@ -198,16 +194,13 @@ def process_audio():
         elif "đi ngủ đi" in spoken_text or "ngủ đi" in spoken_text:
             is_awake = False
             reply_text = "Vâng ạ"
-            current_bot_mode = "SET_MODE_0"  # Ép H3 về Mode 0 (Mặt ngủ)
+            current_bot_mode = "SET_MODE_0" 
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
         else:
             reply_text = "Sếp nói lại đi."
-            current_bot_mode = "SET_MODE_1"  # Vẫn ở trạng thái tỉnh táo (Mode 1)
+            current_bot_mode = "SET_MODE_1" 
 
-    # Cho server "suy nghĩ" nhẹ 1.5 giây để gom data và render ổn định
-    print("[Server] Đang tổng hợp dữ liệu...")
-    time.sleep(1.5)
-
+    # Đã lược bỏ hoàn toàn lệnh time.sleep(1.5) để tăng tốc độ phản hồi tối đa
     print(f"[Server] Phản hồi: {reply_text} | Bot-Mode: {current_bot_mode}")
 
     # 5. Tạo file âm thanh trả về cho ESP32 phát loa
@@ -223,13 +216,12 @@ def process_audio():
     if is_awake:
         last_active_time = time.time()
 
-    # Kiểm tra kĩ file PCM có thực sự tồn tại và có dung lượng > 0 hay không
     if os.path.exists(raw_pcm_reply) and os.path.getsize(raw_pcm_reply) > 0:
         resp = make_response(
             send_file(raw_pcm_reply, mimetype="application/octet-stream")
         )
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
-        resp.headers["Bot-Mode"] = current_bot_mode  # Gửi thẳng lệnh SET_MODE_x xuống S3 để chuyển giao diện
+        resp.headers["Bot-Mode"] = current_bot_mode 
         return resp
     else:
         print("[Lỗi] File PCM phản hồi bị rỗng hoặc lỗi tạo từ ffmpeg!")
