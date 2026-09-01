@@ -22,7 +22,7 @@ alarm_hour = None
 alarm_minute = None
 alarm_period = None  # "sáng" hoặc "chiều"
 
-print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm tối ưu thông minh!")
+print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 2 giây tối ưu!")
 
 
 def remove_accents(input_str):
@@ -107,7 +107,8 @@ def process_audio():
         print("[Server] Không nghe rõ nội dung hoặc khoảng lặng.")
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
-        resp.headers["Bot-Mode"] = "SET_MODE_LONG_AUDIO" if waiting_for_alarm else "DEFAULT"
+        # Đã bỏ 5s, nếu k nghe rõ giữ chế độ thu chuẩn 2s
+        resp.headers["Bot-Mode"] = "SET_MODE_1" if waiting_for_alarm else "DEFAULT"
         return resp
     except sr.RequestError as e:
         print(f"[Server] Lỗi kết nối Google STT: {e}")
@@ -161,18 +162,18 @@ def process_audio():
                 elif any(b in text_clean for b in ["chiều", "tối", "trưa", "pm"]):
                     alarm_period = "chiều"
 
-                # Kiểm tra thiếu thành phần nào thì hỏi đúng thành phần đó
+                # Kiểm tra thiếu thành phần nào thì hỏi đúng thành phần đó (Đã chuyển về SET_MODE_1 - 2 giây)
                 if alarm_hour is None:
                     reply_text = "Sếp muốn đặt lúc mấy giờ ạ?"
-                    current_bot_mode = "SET_MODE_LONG_AUDIO" 
+                    current_bot_mode = "SET_MODE_1" 
                 elif alarm_minute is None:
                     reply_text = "Sếp muốn đặt phút mấy ạ?"
-                    current_bot_mode = "SET_MODE_LONG_AUDIO" 
+                    current_bot_mode = "SET_MODE_1" 
                 elif alarm_period is None:
                     reply_text = "Sếp đặt sáng hay chiều ạ?"
-                    current_bot_mode = "SET_MODE_LONG_AUDIO" 
+                    current_bot_mode = "SET_MODE_1" 
                 else:
-                    # ĐÃ ĐỦ CẢ 3 ĐIỀU KIỆN -> Hoàn tất và trả trình thu về 2s
+                    # ĐÃ ĐỦ CẢ 3 ĐIỀU KIỆN -> Hoàn tất
                     final_time_str = f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
                     reply_text = f"Đã rõ, em đã đặt báo thức lúc {final_time_str}"
                     current_bot_mode = "SET_MODE_1" 
@@ -190,7 +191,7 @@ def process_audio():
             alarm_minute = None
             alarm_period = None
             reply_text = "Sếp muốn đặt thế nào?"
-            current_bot_mode = "SET_MODE_LONG_AUDIO" 
+            current_bot_mode = "SET_MODE_1" # Dùng 2 giây luôn
             print("[Server] Bắt đầu tiến trình đặt báo thức...")
 
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
@@ -277,7 +278,7 @@ def process_audio():
             current_bot_mode = "SET_MODE_0" 
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
             
-        elif any(kw in spoken_text for kw in ["tắt báo thức", "dừng báo thức", "tắt chuông", "tắt báo"]):
+        elif any(kw in spoken_text for kw in ["tắt báo thức", "dừng báo thức", "tắt chuông", "dừng chuông"]):
             reply_text = "Đã tắt báo thức ạ."
             current_bot_mode = "ALARM_STOP" 
             print("[Server] Đã nhận lệnh tắt báo thức qua giọng nói.")
