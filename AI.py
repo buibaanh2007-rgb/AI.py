@@ -68,7 +68,6 @@ def process_audio():
 
     # 3. Nhận audio thô từ ESP32 (với gói 2 giây tương đương ~64000 bytes)
     audio_data = request.data
-    # Hạ ngưỡng nhận diện xuống vì gói 2 giây có dung lượng nhỏ hơn gói 5 giây cũ
     if len(audio_data) < 500:
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
@@ -118,6 +117,7 @@ def process_audio():
             return resp
     else:
         if "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
+            # Lấy trực tiếp thông tin nhiệt độ/độ ẩm do S3 vừa đọc qua DHT22 và truyền kèm HTTP Headers
             room_temp = request.headers.get("X-Room-Temp", "25")
             room_hum = request.headers.get("X-Room-Hum", "50")
             
@@ -200,7 +200,6 @@ def process_audio():
             reply_text = "Sếp nói lại đi."
             current_bot_mode = "SET_MODE_1" 
 
-    # Đã lược bỏ hoàn toàn lệnh time.sleep(1.5) để tăng tốc độ phản hồi tối đa
     print(f"[Server] Phản hồi: {reply_text} | Bot-Mode: {current_bot_mode}")
 
     # 5. Tạo file âm thanh trả về cho ESP32 phát loa
