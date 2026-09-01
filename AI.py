@@ -138,7 +138,7 @@ def process_audio():
                 alarm_minute = None
                 alarm_period = None
                 reply_text = "Đã hủy"
-                current_bot_mode = "SET_MODE_1"  # Trả trình thu về 2s
+                current_bot_mode = "SET_MODE_1" 
                 print("[Server] Đã hủy đặt báo thức.")
             else:
                 # Quét trích xuất các con số cho Giờ hoặc Phút
@@ -164,18 +164,18 @@ def process_audio():
                 # Kiểm tra thiếu thành phần nào thì hỏi đúng thành phần đó
                 if alarm_hour is None:
                     reply_text = "Sếp muốn đặt lúc mấy giờ ạ?"
-                    current_bot_mode = "SET_MODE_LONG_AUDIO"  # Giữ thu âm 5s
+                    current_bot_mode = "SET_MODE_LONG_AUDIO" 
                 elif alarm_minute is None:
                     reply_text = "Sếp muốn đặt phút mấy ạ?"
-                    current_bot_mode = "SET_MODE_LONG_AUDIO"  # Giữ thu âm 5s
+                    current_bot_mode = "SET_MODE_LONG_AUDIO" 
                 elif alarm_period is None:
                     reply_text = "Sếp đặt sáng hay chiều ạ?"
-                    current_bot_mode = "SET_MODE_LONG_AUDIO"  # Giữ thu âm 5s
+                    current_bot_mode = "SET_MODE_LONG_AUDIO" 
                 else:
                     # ĐÃ ĐỦ CẢ 3 ĐIỀU KIỆN -> Hoàn tất và trả trình thu về 2s
                     final_time_str = f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
                     reply_text = f"Đã rõ, em đã đặt báo thức lúc {final_time_str}"
-                    current_bot_mode = "SET_MODE_1"  # Đưa trình thu về 2s
+                    current_bot_mode = "SET_MODE_1" 
                     print(f"[Server] Thiết lập thành công báo thức: {final_time_str}")
 
                     # Reset trạng thái
@@ -190,7 +190,7 @@ def process_audio():
             alarm_minute = None
             alarm_period = None
             reply_text = "Sếp muốn đặt thế nào?"
-            current_bot_mode = "SET_MODE_LONG_AUDIO"  # Bật trình thu lên 5s
+            current_bot_mode = "SET_MODE_LONG_AUDIO" 
             print("[Server] Bắt đầu tiến trình đặt báo thức...")
 
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
@@ -276,6 +276,12 @@ def process_audio():
             reply_text = "Vâng ạ"
             current_bot_mode = "SET_MODE_0" 
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
+            
+        elif any(kw in spoken_text for kw in ["tắt báo thức", "dừng báo thức", "tắt chuông", "tắt báo"]):
+            reply_text = "Đã tắt báo thức ạ."
+            current_bot_mode = "ALARM_STOP" 
+            print("[Server] Đã nhận lệnh tắt báo thức qua giọng nói.")
+            
         else:
             reply_text = "Sếp nói lại đi."
             current_bot_mode = "SET_MODE_1" 
