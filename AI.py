@@ -41,6 +41,11 @@ def process_audio():
     global is_awake, last_active_time, waiting_for_alarm, alarm_hour, alarm_minute, alarm_period
 
     current_bot_mode = "DEFAULT"
+    
+    # Biến lưu thông tin báo thức trả về cho ESP32 (mặc định là rỗng hoặc "NONE")
+    res_alarm_hour = "NONE"
+    res_alarm_minute = "NONE"
+    res_alarm_state = "OFF"  # ON khi có báo thức mới được đặt, OFF khi hủy/tắt
 
     # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
     if request.is_json:
@@ -69,6 +74,7 @@ def process_audio():
                 )
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
                 resp.headers["Bot-Mode"] = "SET_MODE_0"
+                resp.headers["Alarm-State"] = "OFF"
                 return resp
         return "", 204
 
@@ -87,6 +93,7 @@ def process_audio():
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "DEFAULT"
+        resp.headers["Alarm-State"] = "OFF"
         return resp
 
     raw_pcm_path = "input_temp.pcm"
@@ -112,6 +119,7 @@ def process_audio():
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "SET_MODE_1" if waiting_for_alarm else "DEFAULT"
+        resp.headers["Alarm-State"] = "OFF"
         return resp
     except sr.RequestError as e:
         print(f"[Server] Lỗi kết nối Google STT: {e}")
@@ -129,6 +137,7 @@ def process_audio():
             resp = make_response("", 204)
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
             resp.headers["Bot-Mode"] = "DEFAULT"
+            resp.headers["Alarm-State"] = "OFF"
             return resp
     else:
         text_clean = remove_accents(spoken_text)
@@ -143,15 +152,16 @@ def process_audio():
                 alarm_period = None
                 reply_text = "Đã hủy cài đặt báo thức."
                 current_bot_mode = "SET_MODE_1" 
+                res_alarm_state = "OFF"
                 print("[Server] Đã hủy đặt báo thức theo yêu cầu.")
             else:
-                # 1. Bắt nhanh dạng nói liền kiểu: "5h30", "5:30", "5 giờ 30" (có chứa từ giờ/phút hoặc số dính nhau)
+                # 1. Bắt nhanh dạng nói liền kiểu: "5h30", "5:30", "5 giờ 30"
                 match_full = re.search(r'(\d+)\s*(?:giờ|h|:)\s*(\d+)?', spoken_text)
                 if match_full:
                     alarm_hour = int(match_full.group(1))
                     if match_full.group(2):
                         alarm_minute = int(match_full.group(2))
-                
+             
                 # 2. Nếu chưa bắt được phút bằng cách trên, quét chi tiết từng từ
                 words = spoken_text.split()
                 for i, w in enumerate(words):
@@ -181,13 +191,18 @@ def process_audio():
                     reply_text = "Sếp muốn đặt phút thứ mấy ạ?"
                     current_bot_mode = "SET_MODE_1" 
                 else:
-                    # Nếu người dùng đã đọc đủ Giờ và Phút nhưng chưa nói sáng/chiều thì tự động gán thông minh theo khung giờ
                     if alarm_period is None:
                         alarm_period = "sáng" if alarm_hour < 12 else "chiều"
 
                     final_time_str = f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
                     reply_text = f"Đã rõ, đặt báo thức lúc {final_time_str}"
                     current_bot_mode = "SET_MODE_1" 
+                    
+                    # Đẩy thông số sang ESP32
+                    res_alarm_state = "ON"
+                    res_alarm_hour = str(alarm_hour)
+                    res_alarm_minute = str(alarm_minute)
+                    
                     print(f"[Server] Thiết lập thành công báo thức: {final_time_str}")
 
                     # Reset sạch sẽ toàn bộ trạng thái sau khi hoàn tất
@@ -212,6 +227,7 @@ def process_audio():
             alarm_period = None
             reply_text = "Đã xóa báo thức đã đặt ạ."
             current_bot_mode = "SET_MODE_1" 
+            res_alarm_state = "OFF"
             print("[Server] Đã hủy báo thức theo yêu cầu.")
 
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
@@ -301,6 +317,7 @@ def process_audio():
         elif any(kw in spoken_text for kw in ["tắt báo thức", "dừng báo thức", "tắt chuông", "dừng chuông"]):
             reply_text = "Đã tắt báo thức ạ."
             current_bot_mode = "ALARM_STOP" 
+            res_alarm_state = "OFF"
             print("[Server] Đã nhận lệnh tắt báo thức qua giọng nói.")
             
         else:
@@ -328,6 +345,12 @@ def process_audio():
         )
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = current_bot_mode 
+        
+        # Đẩy các thông số báo thức xuống headers để ESP32-S3 đọc và hiển thị lên OLED
+        resp.headers["Alarm-State"] = res_alarm_state
+        resp.headers["Alarm-Hour"] = res_alarm_hour
+        resp.headers["Alarm-Minute"] = res_alarm_minute
+        
         return resp
     else:
         print("[Lỗi] File PCM phản hồi bị rỗng hoặc lỗi tạo từ ffmpeg!")
