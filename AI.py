@@ -75,6 +75,9 @@ def process_audio():
     if is_awake and (time.time() - last_active_time > SLEEP_TIMEOUT):
         is_awake = False
         waiting_for_alarm = False
+        alarm_hour = None
+        alarm_minute = None
+        alarm_period = None
         print("[Server] Đã quá 60 giây tự động chuyển về chế độ NGỦ.")
 
     # 3. Nhận audio thô từ ESP32
@@ -107,7 +110,6 @@ def process_audio():
         print("[Server] Không nghe rõ nội dung hoặc khoảng lặng.")
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
-        # Đã bỏ 5s, nếu k nghe rõ giữ chế độ thu chuẩn 2s
         resp.headers["Bot-Mode"] = "SET_MODE_1" if waiting_for_alarm else "DEFAULT"
         return resp
     except sr.RequestError as e:
@@ -132,24 +134,25 @@ def process_audio():
         if waiting_for_alarm:
             text_clean = remove_accents(spoken_text)
 
-            # Kiểm tra lệnh hủy
-            if "hủy" in text_clean:
+            # Lệnh hủy được đặt lên ưu tiên tuyệt đối đầu tiên để cắt đứt vòng lặp ngay lập tức
+            if any(k in text_clean for k in ["huy", "thoi", "dung", "khong dat nua"]):
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
                 alarm_period = None
-                reply_text = "Đã hủy"
+                reply_text = "Đã hủy cài đặt báo thức."
                 current_bot_mode = "SET_MODE_1" 
-                print("[Server] Đã hủy đặt báo thức.")
+                print("[Server] Đã hủy đặt báo thức theo yêu cầu.")
             else:
-                # Quét trích xuất các con số cho Giờ hoặc Phút
+                # Quét trích xuất số cho giờ và phút (GIỮ LẠI GIÁ TRỊ CŨ NẾU CÂU TRƯỚC ĐÃ CÓ)
                 words = spoken_text.split()
                 for i, w in enumerate(words):
                     if w.isdigit():
                         val = int(w)
-                        if i + 1 < len(words) and "phút" in words[i+1]:
+                        clean_next_word = remove_accents(words[i+1]) if i + 1 < len(words) else ""
+                        if "phut" in clean_next_word:
                             alarm_minute = val
-                        elif i + 1 < len(words) and ("giờ" in words[i+1] or "h" in words[i+1]):
+                        elif any(h in clean_next_word for h in ["gio", "h"]):
                             alarm_hour = val
                         elif alarm_hour is None:
                             alarm_hour = val
@@ -157,29 +160,29 @@ def process_audio():
                             alarm_minute = val
 
                 # Quét nhận diện buổi sáng hay chiều
-                if "sáng" in text_clean or "am" in text_clean:
+                if any(s in text_clean for s in ["sang", "am"]):
                     alarm_period = "sáng"
-                elif any(b in text_clean for b in ["chiều", "tối", "trưa", "pm"]):
+                elif any(b in text_clean for b in ["chiều", "toi", "trua", "pm", "chieu"]):
                     alarm_period = "chiều"
 
-                # Kiểm tra thiếu thành phần nào thì hỏi đúng thành phần đó (Đã chuyển về SET_MODE_1 - 2 giây)
+                # Kiểm tra thiếu thành phần nào thì hỏi đúng thành phần đó
                 if alarm_hour is None:
                     reply_text = "Sếp muốn đặt lúc mấy giờ ạ?"
                     current_bot_mode = "SET_MODE_1" 
                 elif alarm_minute is None:
                     reply_text = "Sếp muốn đặt phút mấy ạ?"
                     current_bot_mode = "SET_MODE_1" 
-                elif alarm_period is None:
-                    reply_text = "Sếp đặt sáng hay chiều ạ?"
-                    current_bot_mode = "SET_MODE_1" 
                 else:
-                    # ĐÃ ĐỦ CẢ 3 ĐIỀU KIỆN -> Hoàn tất
+                    # Nếu người dùng đã đọc đủ Giờ và Phút nhưng chưa nói sáng/chiều thì tự động gán thông minh theo khung giờ
+                    if alarm_period is None:
+                        alarm_period = "sáng" if alarm_hour < 12 else "chiều"
+
                     final_time_str = f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
                     reply_text = f"Đã rõ, em đã đặt báo thức lúc {final_time_str}"
                     current_bot_mode = "SET_MODE_1" 
                     print(f"[Server] Thiết lập thành công báo thức: {final_time_str}")
 
-                    # Reset trạng thái
+                    # Reset sạch sẽ toàn bộ trạng thái sau khi hoàn tất
                     waiting_for_alarm = False
                     alarm_hour = None
                     alarm_minute = None
@@ -191,7 +194,7 @@ def process_audio():
             alarm_minute = None
             alarm_period = None
             reply_text = "Sếp muốn đặt thế nào?"
-            current_bot_mode = "SET_MODE_1" # Dùng 2 giây luôn
+            current_bot_mode = "SET_MODE_1" 
             print("[Server] Bắt đầu tiến trình đặt báo thức...")
 
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
