@@ -135,7 +135,7 @@ def process_audio():
             text_clean = remove_accents(spoken_text)
 
             # Lệnh hủy được đặt lên ưu tiên tuyệt đối đầu tiên, bao gồm cả các câu lệnh dài
-            if any(k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua", "hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]):
+            if any(k in text_clean for k in ["hủy", "thôi", "dừng", "không đặt nữa", "hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]):
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
