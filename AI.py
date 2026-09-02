@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+import re
 import time
 import unicodedata
 
@@ -134,17 +135,24 @@ def process_audio():
 
         # KIỂM TRA ĐANG TRONG TIẾN TRÌNH ĐẶT BÁO THỨC
         if waiting_for_alarm:
-            # ĐƯA LỆNH HỦY/XÓA LÊN ĐẦU TIÊN TUYỆT ĐỐI TRONG TIẾN TRÌNH
+            # Lệnh hủy được đặt lên ưu tiên tuyệt đối đầu tiên
             if any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]) or any(k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua"]):
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
                 alarm_period = None
-                reply_text = "Đã xóa báo thức đã đặt ạ."
+                reply_text = "Đã hủy cài đặt báo thức."
                 current_bot_mode = "SET_MODE_1" 
-                print("[Server] Đã hủy báo thức theo yêu cầu.")
+                print("[Server] Đã hủy đặt báo thức theo yêu cầu.")
             else:
-                # Quét trích xuất số cho giờ và phút (GIỮ LẠI GIÁ TRỊ CŨ NẾU CÂU TRƯỚC ĐÃ CÓ)
+                # 1. Bắt nhanh dạng nói liền kiểu: "5h30", "5:30", "5 giờ 30" (có chứa từ giờ/phút hoặc số dính nhau)
+                match_full = re.search(r'(\d+)\s*(?:giờ|h|:)\s*(\d+)?', spoken_text)
+                if match_full:
+                    alarm_hour = int(match_full.group(1))
+                    if match_full.group(2):
+                        alarm_minute = int(match_full.group(2))
+                
+                # 2. Nếu chưa bắt được phút bằng cách trên, quét chi tiết từng từ
                 words = spoken_text.split()
                 for i, w in enumerate(words):
                     if w.isdigit():
@@ -156,7 +164,7 @@ def process_audio():
                             alarm_hour = val
                         elif alarm_hour is None:
                             alarm_hour = val
-                        elif alarm_minute is None:
+                        elif alarm_minute is None and alarm_hour is not None:
                             alarm_minute = val
 
                 # Quét nhận diện buổi sáng hay chiều
