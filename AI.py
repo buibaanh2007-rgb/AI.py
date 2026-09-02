@@ -135,7 +135,7 @@ def process_audio():
             text_clean = remove_accents(spoken_text)
 
             # Lệnh hủy được đặt lên ưu tiên tuyệt đối đầu tiên để cắt đứt vòng lặp ngay lập tức
-            if any(k in text_clean for k in ["huy", "thoi", "dung", "khong dat nua"]):
+            if any(k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua"]):
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
@@ -160,7 +160,7 @@ def process_audio():
                             alarm_minute = val
 
                 # Quét nhận diện buổi sáng hay chiều
-                if any(s in text_clean for s in ["sang", "am"]):
+                if any(s in text_clean for s in ["sáng", "am"]):
                     alarm_period = "sáng"
                 elif any(b in text_clean for b in ["chiều", "toi", "trua", "pm", "chieu"]):
                     alarm_period = "chiều"
@@ -178,7 +178,7 @@ def process_audio():
                         alarm_period = "sáng" if alarm_hour < 12 else "chiều"
 
                     final_time_str = f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
-                    reply_text = f"Đã rõ, em đã đặt báo thức lúc {final_time_str}"
+                    reply_text = f"Đã rõ, đặt báo thức lúc {final_time_str}"
                     current_bot_mode = "SET_MODE_1" 
                     print(f"[Server] Thiết lập thành công báo thức: {final_time_str}")
 
@@ -266,7 +266,7 @@ def process_audio():
                         result = round(result, 2)
                     reply_text = f"Kết quả bằng {result} ạ"
                 else:
-                    reply_text = "Mời sếp đọc lại giúp em."
+                    reply_text = "sếp đọc lại giúp em."
             except Exception as e:
                 print(f"[Lỗi tính toán]: {e}")
                 reply_text = "Em không thực hiện được phép tính này."
