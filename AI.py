@@ -196,6 +196,10 @@ def process_audio():
             reply_text = "Sếp muốn đặt thế nào?"
             current_bot_mode = "SET_MODE_1" 
             print("[Server] Bắt đầu tiến trình đặt báo thức...")
+        elif any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]):
+            reply_text = "Đã xóa báo thức đã đặt ạ."
+            current_bot_mode = "SET_MODE_1" 
+            print("[Server] Đã hủy báo thức theo yêu cầu.")
 
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
             room_temp = request.headers.get("X-Room-Temp", "25")
