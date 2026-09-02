@@ -330,7 +330,7 @@ def process_audio():
                 reply_text = "Em không thực hiện được phép tính này."
 
         # ƯU TIÊN 9: Kích hoạt Mode 5 (Nháy theo nhạc bằng giọng nói)
-        elif "bật cài đặt ẩn" in spoken_text or "nháy theo nhạc" in spoken_text or "mode 5" in spoken_text:
+        elif "bật cài đặt" in spoken_text or "hey google" in spoken_text or "mode 5" in spoken_text:
             reply_text = "Đã chuyển sang chế độ nháy nhạc."
             current_bot_mode = "SET_MODE_5"
             is_awake = False  # Đưa bot về trạng thái chuẩn bị bàn giao toàn quyền
