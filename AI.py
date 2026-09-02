@@ -161,7 +161,7 @@ def process_audio():
                     alarm_hour = int(match_full.group(1))
                     if match_full.group(2):
                         alarm_minute = int(match_full.group(2))
-             
+               
                 # 2. Nếu chưa bắt được phút bằng cách trên, quét chi tiết từng từ
                 words = spoken_text.split()
                 for i, w in enumerate(words):
@@ -191,25 +191,35 @@ def process_audio():
                     reply_text = "Sếp muốn đặt phút thứ mấy ạ?"
                     current_bot_mode = "SET_MODE_1" 
                 else:
-                    if alarm_period is None:
-                        alarm_period = "sáng" if alarm_hour < 12 else "chiều"
+                    # --- KIỂM TRA TÍNH HỢP LỆ CỦA GIỜ VÀ PHÚT (VALIDATION) ---
+                    if not (0 <= alarm_hour <= 23 and 0 <= alarm_minute <= 59):
+                        reply_text = "Giờ hoặc phút không hợp lệ rồi, sếp đọc lại giúp em nhé."
+                        current_bot_mode = "SET_MODE_1"
+                        print(f"[Server] Phát hiện giờ/phút không hợp lệ: {alarm_hour}h{alarm_minute}. Yêu cầu nói lại.")
+                        # Reset các biến để nhập lại từ đầu
+                        alarm_hour = None
+                        alarm_minute = None
+                        alarm_period = None
+                    else:
+                        if alarm_period is None:
+                            alarm_period = "sáng" if alarm_hour < 12 else "chiều"
 
-                    final_time_str = f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
-                    reply_text = f"Đã rõ, đặt báo thức lúc {final_time_str}"
-                    current_bot_mode = "SET_MODE_1" 
-                    
-                    # Đẩy thông số sang ESP32
-                    res_alarm_state = "ON"
-                    res_alarm_hour = str(alarm_hour)
-                    res_alarm_minute = str(alarm_minute)
-                    
-                    print(f"[Server] Thiết lập thành công báo thức: {final_time_str}")
+                        final_time_str = f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
+                        reply_text = f"Đã rõ, đặt báo thức lúc {final_time_str}"
+                        current_bot_mode = "SET_MODE_1" 
+                        
+                        # Đẩy thông số sang ESP32
+                        res_alarm_state = "ON"
+                        res_alarm_hour = str(alarm_hour)
+                        res_alarm_minute = str(alarm_minute)
+                        
+                        print(f"[Server] Thiết lập thành công báo thức: {final_time_str}")
 
-                    # Reset sạch sẽ toàn bộ trạng thái sau khi hoàn tất
-                    waiting_for_alarm = False
-                    alarm_hour = None
-                    alarm_minute = None
-                    alarm_period = None
+                        # Reset sạch sẽ toàn bộ trạng thái sau khi hoàn tất
+                        waiting_for_alarm = False
+                        alarm_hour = None
+                        alarm_minute = None
+                        alarm_period = None
 
         elif "đặt báo thức" in spoken_text or "báo thức" in spoken_text:
             waiting_for_alarm = True
@@ -272,7 +282,7 @@ def process_audio():
                     temp = data["current_condition"][0]["temp_C"]
                     humidity = data["current_condition"][0]["humidity"]
                     
-                    reply_text = f"Thời tiết {location}. nhiệt độ {temp} độ C. độ ẩm {humidity} phần trăm"
+                    reply_text = f"Thời tiết {location}. nhiệt độ {temp} độ C. độ ẩm {humidity} percent"
                 else:
                     reply_text = "Không tìm thấy thời tiết khu vực này"
             except Exception as e:
