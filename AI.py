@@ -130,19 +130,19 @@ def process_audio():
             resp.headers["Bot-Mode"] = "DEFAULT"
             return resp
     else:
+        text_clean = remove_accents(spoken_text)
+
         # KIỂM TRA ĐANG TRONG TIẾN TRÌNH ĐẶT BÁO THỨC
         if waiting_for_alarm:
-            text_clean = remove_accents(spoken_text)
-
-            # Lệnh hủy được đặt lên ưu tiên tuyệt đối đầu tiên, bao gồm cả các câu lệnh dài
-            if any(k in text_clean for k in ["hủy", "thôi", "dừng", "không đặt nữa", "hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]):
+            # ĐƯA LỆNH HỦY/XÓA LÊN ĐẦU TIÊN TUYỆT ĐỐI TRONG TIẾN TRÌNH
+            if any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]) or any(k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua"]):
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
                 alarm_period = None
-                reply_text = "Đã hủy cài đặt báo thức."
+                reply_text = "Đã xóa báo thức đã đặt ạ."
                 current_bot_mode = "SET_MODE_1" 
-                print("[Server] Đã hủy đặt báo thức theo yêu cầu.")
+                print("[Server] Đã hủy báo thức theo yêu cầu.")
             else:
                 # Quét trích xuất số cho giờ và phút (GIỮ LẠI GIÁ TRỊ CŨ NẾU CÂU TRƯỚC ĐÃ CÓ)
                 words = spoken_text.split()
@@ -196,7 +196,8 @@ def process_audio():
             reply_text = "Sếp muốn đặt thế nào?"
             current_bot_mode = "SET_MODE_1" 
             print("[Server] Bắt đầu tiến trình đặt báo thức...")
-        elif any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]):
+            
+        elif any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]) or any(k in text_clean for k in ["huy", "xoa bao thuc", "bo bao thuc"]):
             waiting_for_alarm = False
             alarm_hour = None
             alarm_minute = None
