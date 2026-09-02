@@ -22,6 +22,7 @@ waiting_for_alarm = False
 alarm_hour = None
 alarm_minute = None
 alarm_period = None  # "sáng" hoặc "chiều"
+alarm_is_active = False  # Trợ giúp theo dõi báo thức đang bật hay tắt trên toàn hệ thống
 
 print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 2 giây tối ưu!")
 
@@ -38,14 +39,14 @@ def home():
 
 @app.route("/process-audio", methods=["POST"])
 def process_audio():
-    global is_awake, last_active_time, waiting_for_alarm, alarm_hour, alarm_minute, alarm_period
+    global is_awake, last_active_time, waiting_for_alarm, alarm_hour, alarm_minute, alarm_period, alarm_is_active
 
     current_bot_mode = "DEFAULT"
     
-    # Biến lưu thông tin báo thức trả về cho ESP32 (mặc định là rỗng hoặc "NONE")
+    # Biến lưu thông tin báo thức trả về cho ESP32
     res_alarm_hour = "NONE"
     res_alarm_minute = "NONE"
-    res_alarm_state = "OFF"  # ON khi có báo thức mới được đặt, OFF khi hủy/tắt
+    res_alarm_state = "ON" if alarm_is_active else "OFF"  
 
     # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
     if request.is_json:
@@ -74,7 +75,9 @@ def process_audio():
                 )
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
                 resp.headers["Bot-Mode"] = "SET_MODE_0"
-                resp.headers["Alarm-State"] = "OFF"
+                resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
+                resp.headers["Alarm-Hour"] = str(alarm_hour) if alarm_hour is not None else "NONE"
+                resp.headers["Alarm-Minute"] = str(alarm_minute) if alarm_minute is not None else "NONE"
                 return resp
         return "", 204
 
@@ -93,7 +96,7 @@ def process_audio():
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "DEFAULT"
-        resp.headers["Alarm-State"] = "OFF"
+        resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
         return resp
 
     raw_pcm_path = "input_temp.pcm"
@@ -119,7 +122,7 @@ def process_audio():
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "SET_MODE_1" if waiting_for_alarm else "DEFAULT"
-        resp.headers["Alarm-State"] = "OFF"
+        resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
         return resp
     except sr.RequestError as e:
         print(f"[Server] Lỗi kết nối Google STT: {e}")
@@ -137,32 +140,30 @@ def process_audio():
             resp = make_response("", 204)
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
             resp.headers["Bot-Mode"] = "DEFAULT"
-            resp.headers["Alarm-State"] = "OFF"
+            resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
             return resp
     else:
         text_clean = remove_accents(spoken_text)
 
         # KIỂM TRA ĐANG TRONG TIẾN TRÌNH ĐẶT BÁO THỨC
         if waiting_for_alarm:
-            # Lệnh hủy được đặt lên ưu tiên tuyệt đối đầu tiên
             if any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]) or any(k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua"]):
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
                 alarm_period = None
+                alarm_is_active = False
                 reply_text = "Đã hủy cài đặt báo thức."
                 current_bot_mode = "SET_MODE_1" 
                 res_alarm_state = "OFF"
                 print("[Server] Đã hủy đặt báo thức theo yêu cầu.")
             else:
-                # 1. Bắt nhanh dạng nói liền kiểu: "5h30", "5:30", "5 giờ 30"
                 match_full = re.search(r'(\d+)\s*(?:giờ|h|:)\s*(\d+)?', spoken_text)
                 if match_full:
                     alarm_hour = int(match_full.group(1))
                     if match_full.group(2):
                         alarm_minute = int(match_full.group(2))
                
-                # 2. Nếu chưa bắt được phút bằng cách trên, quét chi tiết từng từ
                 words = spoken_text.split()
                 for i, w in enumerate(words):
                     if w.isdigit():
@@ -177,13 +178,11 @@ def process_audio():
                         elif alarm_minute is None and alarm_hour is not None:
                             alarm_minute = val
 
-                # Quét nhận diện buổi sáng hay chiều
                 if any(s in text_clean for s in ["sáng", "am"]):
                     alarm_period = "sáng"
                 elif any(b in text_clean for b in ["chiều", "toi", "trua", "pm", "chieu"]):
                     alarm_period = "chiều"
 
-                # Kiểm tra thiếu thành phần nào thì hỏi đúng thành phần đó
                 if alarm_hour is None:
                     reply_text = "Sếp muốn đặt lúc mấy giờ ạ?"
                     current_bot_mode = "SET_MODE_1" 
@@ -191,12 +190,9 @@ def process_audio():
                     reply_text = "Sếp muốn đặt phút thứ mấy ạ?"
                     current_bot_mode = "SET_MODE_1" 
                 else:
-                    # --- KIỂM TRA TÍNH HỢP LỆ CỦA GIỜ VÀ PHÚT (VALIDATION) ---
                     if not (0 <= alarm_hour <= 23 and 0 <= alarm_minute <= 59):
                         reply_text = "Giờ hoặc phút không hợp lệ rồi, sếp đọc lại giúp em nhé."
                         current_bot_mode = "SET_MODE_1"
-                        print(f"[Server] Phát hiện giờ/phút không hợp lệ: {alarm_hour}h{alarm_minute}. Yêu cầu nói lại.")
-                        # Reset các biến để nhập lại từ đầu
                         alarm_hour = None
                         alarm_minute = None
                         alarm_period = None
@@ -208,18 +204,16 @@ def process_audio():
                         reply_text = f"Đã rõ, đặt báo thức lúc {final_time_str}"
                         current_bot_mode = "SET_MODE_1" 
                         
-                        # Đẩy thông số sang ESP32
+                        # Kích hoạt trạng thái báo thức thành công
+                        alarm_is_active = True
                         res_alarm_state = "ON"
                         res_alarm_hour = str(alarm_hour)
                         res_alarm_minute = str(alarm_minute)
                         
                         print(f"[Server] Thiết lập thành công báo thức: {final_time_str}")
 
-                        # Reset sạch sẽ toàn bộ trạng thái sau khi hoàn tất
                         waiting_for_alarm = False
-                        alarm_hour = None
-                        alarm_minute = None
-                        alarm_period = None
+                        # Giữ lại alarm_hour và alarm_minute để đồng bộ nếu cần, không reset hẳn nếu muốn lưu vết
 
         elif "đặt báo thức" in spoken_text or "báo thức" in spoken_text:
             waiting_for_alarm = True
@@ -235,6 +229,7 @@ def process_audio():
             alarm_hour = None
             alarm_minute = None
             alarm_period = None
+            alarm_is_active = False
             reply_text = "Đã xóa báo thức đã đặt ạ."
             current_bot_mode = "SET_MODE_1" 
             res_alarm_state = "OFF"
@@ -325,6 +320,7 @@ def process_audio():
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
             
         elif any(kw in spoken_text for kw in ["tắt báo thức", "dừng báo thức", "tắt chuông", "dừng chuông"]):
+            alarm_is_active = False
             reply_text = "Đã tắt báo thức ạ."
             current_bot_mode = "ALARM_STOP" 
             res_alarm_state = "OFF"
@@ -356,10 +352,10 @@ def process_audio():
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = current_bot_mode 
         
-        # Đẩy các thông số báo thức xuống headers để ESP32-S3 đọc và hiển thị lên OLED
+        # Đẩy các thông số báo thức xuống headers đồng bộ tuyệt đối với ESP32-S3
         resp.headers["Alarm-State"] = res_alarm_state
-        resp.headers["Alarm-Hour"] = res_alarm_hour
-        resp.headers["Alarm-Minute"] = res_alarm_minute
+        resp.headers["Alarm-Hour"] = str(alarm_hour) if alarm_hour is not None else "NONE"
+        resp.headers["Alarm-Minute"] = str(alarm_minute) if alarm_minute is not None else "NONE"
         
         return resp
     else:
