@@ -21,8 +21,8 @@ SLEEP_TIMEOUT = 60
 waiting_for_alarm = False
 alarm_hour = None
 alarm_minute = None
-alarm_period = None  # "sáng" hoặc "chiều"
-alarm_is_active = False  # Trợ giúp theo dõi báo thức đang bật hay tắt trên toàn hệ thống
+alarm_period = None 
+alarm_is_active = False 
 
 print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 2 giây tối ưu!")
 
@@ -329,7 +329,14 @@ def process_audio():
                 print(f"[Lỗi tính toán]: {e}")
                 reply_text = "Em không thực hiện được phép tính này."
 
-        # ƯU TIÊN 9: Lệnh đi ngủ
+        # ƯU TIÊN 9: Kích hoạt Mode 5 (Nháy theo nhạc bằng giọng nói)
+        elif "mở mode 5" in spoken_text or "chế độ 5" in spoken_text or "mode 5" in spoken_text:
+            reply_text = "Đã chuyển sang chế độ nháy nhạc."
+            current_bot_mode = "SET_MODE_5"
+            is_awake = False  # Đưa bot về trạng thái chuẩn bị bàn giao toàn quyền
+            print("[Server] Kích hoạt MODE 5: Bàn giao toàn quyền cho phần cứng S3 và H3.")
+
+        # ƯU TIÊN 10: Lệnh đi ngủ
         elif "đi ngủ đi" in spoken_text or "ngủ đi" in spoken_text:
             is_awake = False
             waiting_for_alarm = False
