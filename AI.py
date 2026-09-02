@@ -134,8 +134,8 @@ def process_audio():
         if waiting_for_alarm:
             text_clean = remove_accents(spoken_text)
 
-            # Lệnh hủy được đặt lên ưu tiên tuyệt đối đầu tiên để cắt đứt vòng lặp ngay lập tức
-            if any(k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua"]):
+            # Lệnh hủy được đặt lên ưu tiên tuyệt đối đầu tiên, bao gồm cả các câu lệnh dài
+            if any(k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua", "hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]):
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
@@ -170,7 +170,7 @@ def process_audio():
                     reply_text = "Sếp muốn đặt lúc mấy giờ ạ?"
                     current_bot_mode = "SET_MODE_1" 
                 elif alarm_minute is None:
-                    reply_text = "Sếp muốn đặt phút mấy ạ?"
+                    reply_text = "Sếp muốn đặt phút thứ mấy ạ?"
                     current_bot_mode = "SET_MODE_1" 
                 else:
                     # Nếu người dùng đã đọc đủ Giờ và Phút nhưng chưa nói sáng/chiều thì tự động gán thông minh theo khung giờ
@@ -197,6 +197,10 @@ def process_audio():
             current_bot_mode = "SET_MODE_1" 
             print("[Server] Bắt đầu tiến trình đặt báo thức...")
         elif any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]):
+            waiting_for_alarm = False
+            alarm_hour = None
+            alarm_minute = None
+            alarm_period = None
             reply_text = "Đã xóa báo thức đã đặt ạ."
             current_bot_mode = "SET_MODE_1" 
             print("[Server] Đã hủy báo thức theo yêu cầu.")
