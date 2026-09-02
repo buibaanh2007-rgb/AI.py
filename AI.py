@@ -118,7 +118,7 @@ def process_audio():
 
     # 4. Phân rã logic theo trạng thái THỨC hay NGỦ
     if not is_awake:
-        wake_words = ["xin chào", "chào", "ngáo", "bật dậy", "dậy đi"]
+        wake_words = ["xin chào", "chào", "ngáo", "xin", "dậy đi"]
         if any(word in spoken_text for word in wake_words):
             is_awake = True
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
