@@ -12,39 +12,41 @@ import speech_recognition as sr
 app = Flask(__name__)
 recognizer = sr.Recognizer()
 
-# Biến toàn cục quản lý trạng thái thức/ngủ và timeout 60 giây
+# Cấu hình bảo mật API Key (Cần đồng bộ với sv2 và phần cứng S3 nếu gọi API)
+API_KEY = "iot_secure_token_2026"
+
+def verify_api_key():
+    # Kiểm tra header X-API-Key cho các request nhạy cảm
+    client_key = request.headers.get("X-API-Key")
+    if client_key != API_KEY:
+        return False
+    return True
+
+# Biến toàn cục quản lý trạng thái
 is_awake = False
 last_active_time = 0
 SLEEP_TIMEOUT = 60
 
-# Các biến toàn cục quản lý trạng thái đặt báo thức thông minh
 waiting_for_alarm = False
 alarm_hour = None
 alarm_minute = None
 alarm_period = None 
 alarm_is_active = False 
 
-# Biến toàn cục quản lý trạng thái Mode 5 (Nháy theo nhạc)
 mode_5_active = False
 
-# Biến toàn cục lưu trạng thái cảm biến mới nhất từ S3 để phục vụ Web Dashboard & Giọng nói
 current_room_temp = "25.0"
 current_room_hum = "50.0"
 
-print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 2 giây tối ưu!")
-
+print("[Server] Đã khởi chạy sv1 với các lớp bảo mật API Key!")
 
 def remove_accents(input_str):
     nfkd_form = unicodedata.normalize("NFKD", input_str)
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
-
 @app.route("/")
 def home():
-    return "AI Speaker Server Running!"
-
-
-# --- CÁC API PHỤC VỤ WEB DASHBOARD (CỔNG 9090) ---
+    return "AI Speaker Server Running Securely!"
 
 @app.route("/api/status", methods=["GET"])
 def api_status():
@@ -58,45 +60,60 @@ def api_status():
         "mode_5_active": mode_5_active
     })
 
-
 @app.route("/api/set-alarm", methods=["POST"])
 def api_set_alarm():
     global alarm_is_active, alarm_hour, alarm_minute
+    if not verify_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+        
     data = request.get_json()
     if data:
-        alarm_hour = data.get("hour")
-        alarm_minute = data.get("minute")
-        alarm_is_active = True
-        print(f"[Web API] Đã đặt báo thức qua web: {alarm_hour}:{alarm_minute}")
-    return jsonify({"status": "success"})
-
+        try:
+            hour = int(data.get("hour"))
+            minute = int(data.get("minute"))
+            # Validate input an toàn chống tràn/sai logic thời gian
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                alarm_hour = hour
+                alarm_minute = minute
+                alarm_is_active = True
+                print(f"[Security] Đã đặt báo thức hợp lệ qua API: {alarm_hour}:{alarm_minute}")
+                return jsonify({"status": "success"})
+        except (TypeError, ValueError):
+            pass
+            
+    return jsonify({"error": "Invalid input format"}), 400
 
 @app.route("/api/stop-alarm", methods=["POST"])
 def api_stop_alarm():
     global alarm_is_active
+    if not verify_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+        
     alarm_is_active = False
-    print("[Web API] Đã tắt báo thức qua web")
+    print("[Security] Đã tắt báo thức qua API")
     return jsonify({"status": "success"})
-
 
 @app.route("/api/toggle-mode5", methods=["POST"])
 def api_toggle_mode5():
     global mode_5_active
+    if not verify_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+        
     mode_5_active = not mode_5_active
-    print(f"[Web API] Chuyển đổi Mode 5: {mode_5_active}")
+    print(f"[Security] Chuyển đổi Mode 5 qua API: {mode_5_active}")
     return jsonify({"status": "success", "mode_5_active": mode_5_active})
 
-
-# API Endpoint nhận dữ liệu cảm biến định kỳ từ ESP32-S3 & trả kèm trạng thái báo thức xuống phần cứng
 @app.route("/api/update-sensor", methods=["POST"])
 def update_sensor():
     global current_room_temp, current_room_hum, alarm_is_active, alarm_hour, alarm_minute
+    if not verify_api_key():
+        return jsonify({"error": "Unauthorized"}), 401
+        
     if request.is_json:
         data = request.get_json()
         current_room_temp = str(data.get("temp", "25.0"))
         current_room_hum = str(data.get("hum", "50.0"))
         
-        # Trả về kèm trạng thái báo thức để bên phần cứng (S3) đồng bộ ngay lập tức
         return jsonify({
             "status": "success",
             "alarm_is_active": alarm_is_active,
@@ -106,17 +123,14 @@ def update_sensor():
         
     return jsonify({"status": "error"}), 400
 
-
 @app.route("/process-audio", methods=["POST"])
 def process_audio():
     global is_awake, last_active_time, waiting_for_alarm, alarm_hour, alarm_minute, alarm_period, alarm_is_active, mode_5_active
     global current_room_temp, current_room_hum
 
     current_bot_mode = "DEFAULT"
-    
     res_alarm_state = "ON" if alarm_is_active else "OFF"  
 
-    # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
     if request.is_json:
         data = request.get_json()
         event_type = data.get("type", "")
@@ -124,20 +138,14 @@ def process_audio():
             is_awake = False
             waiting_for_alarm = False
             reply_text = "Kết nối server thành công"
-            print(f"[Server] Sự kiện hệ thống - Phản hồi: {reply_text}")
-
             mp3_path = "response.mp3"
             raw_pcm_reply = "response.pcm"
             tts = gTTS(text=reply_text, lang="vi")
             tts.save(mp3_path)
-            os.system(
-                f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
-            )
+            os.system(f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1")
 
             if os.path.exists(raw_pcm_reply) and os.path.getsize(raw_pcm_reply) > 0:
-                resp = make_response(
-                    send_file(raw_pcm_reply, mimetype="application/octet-stream")
-                )
+                resp = make_response(send_file(raw_pcm_reply, mimetype="application/octet-stream"))
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
                 resp.headers["Bot-Mode"] = "SET_MODE_0"
                 resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
@@ -146,13 +154,10 @@ def process_audio():
                 return resp
         return "", 204
 
-    # 2. Kiểm tra timeout 60 giây kể từ lần tương tác trước
     if is_awake and (time.time() - last_active_time > SLEEP_TIMEOUT):
         is_awake = False
         waiting_for_alarm = False
-        print("[Server] Đã quá 60 giây tự động chuyển về chế độ NGỦ.")
 
-    # 3. Nhận audio thô từ ESP32
     audio_data = request.data
     if len(audio_data) < 500:
         resp = make_response("", 204)
@@ -167,37 +172,26 @@ def process_audio():
     with open(raw_pcm_path, "wb") as f:
         f.write(audio_data)
 
-    os.system(
-        f"ffmpeg -y -f s16le -ar 16000 -ac 1 -i {raw_pcm_path} {wav_path} > /dev/null 2>&1"
-    )
+    os.system(f"ffmpeg -y -f s16le -ar 16000 -ac 1 -i {raw_pcm_path} {wav_path} > /dev/null 2>&1")
 
     spoken_text = ""
     try:
         with sr.AudioFile(wav_path) as source:
             audio = recognizer.record(source)
-            spoken_text = recognizer.recognize_google(
-                audio, language="vi-VN"
-            ).lower()
-            print(f"[Server] Nghe được: '{spoken_text}'")
-    except sr.UnknownValueError:
-        print("[Server] Không nghe rõ nội dung hoặc khoảng lặng.")
+            spoken_text = recognizer.recognize_google(audio, language="vi-VN").lower()
+    except Exception:
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "SET_MODE_1" if waiting_for_alarm else "DEFAULT"
         resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
         return resp
-    except sr.RequestError as e:
-        print(f"[Server] Lỗi kết nối Google STT: {e}")
-        return "", 500
 
-    # 4. Phân rã logic theo trạng thái THỨC hay NGỦ
     if not is_awake:
         wake_words = ["xin chào", "chào", "ngáo", "xin", "dậy đi"]
         if any(word in spoken_text for word in wake_words):
             is_awake = True
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
             current_bot_mode = "SET_MODE_1" 
-            print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
             resp = make_response("", 204)
             resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
@@ -212,7 +206,6 @@ def process_audio():
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
-                alarm_period = None
                 alarm_is_active = False
                 reply_text = "Đã hủy cài đặt báo thức."
                 current_bot_mode = "SET_MODE_1" 
@@ -238,11 +231,6 @@ def process_audio():
                         elif alarm_minute is None and alarm_hour is not None:
                             alarm_minute = val
 
-                if any(s in text_clean for s in ["sáng", "am"]):
-                    alarm_period = "sáng"
-                elif any(b in text_clean for b in ["chiều", "toi", "trua", "pm"]):
-                    alarm_period = "chiều"
-
                 if alarm_hour is None:
                     reply_text = "Sếp muốn đặt lúc mấy giờ ạ?"
                     current_bot_mode = "SET_MODE_1" 
@@ -256,8 +244,6 @@ def process_audio():
                         alarm_hour = None
                         alarm_minute = None
                     else:
-                        if alarm_period is None:
-                            alarm_period = "sáng" if alarm_hour < 12 else "chiều"
                         reply_text = f"Đã rõ, đặt báo thức lúc {alarm_hour} giờ {alarm_minute} phút"
                         current_bot_mode = "SET_MODE_1" 
                         alarm_is_active = True
@@ -301,17 +287,13 @@ def process_audio():
 
     tts = gTTS(text=reply_text, lang="vi")
     tts.save(mp3_path)
-    os.system(
-        f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
-    )
+    os.system(f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1")
 
     if is_awake:
         last_active_time = time.time()
 
     if os.path.exists(raw_pcm_reply) and os.path.getsize(raw_pcm_reply) > 0:
-        resp = make_response(
-            send_file(raw_pcm_reply, mimetype="application/octet-stream")
-        )
+        resp = make_response(send_file(raw_pcm_reply, mimetype="application/octet-stream"))
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = current_bot_mode 
         resp.headers["Alarm-State"] = res_alarm_state
@@ -321,6 +303,6 @@ def process_audio():
     else:
         return "", 500
 
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    # Tắt debug=True để bảo mật môi trường thực tế (Production)
+    app.run(host="0.0.0.0", port=8080, debug=False)
