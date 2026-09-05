@@ -11,6 +11,7 @@ import speech_recognition as sr
 
 app = Flask(__name__)
 recognizer = sr.Recognizer()
+requests.post("http://<IP_SV2>:9090/api/sync", json={"room_temp": temp_value, "room_hum": hum_value}, timeout=2)
 
 # --- CẤU HÌNH KẾT NỐI SV2 ---
 # Sếp nhớ thay đổi IP và cổng của sv2 cho chính xác nhé
