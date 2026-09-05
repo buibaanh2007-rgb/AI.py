@@ -109,16 +109,21 @@ def process_audio():
   res_alarm_minute = "NONE"
   res_alarm_state = "ON" if alarm_is_active else "OFF"
 
-  # Lấy luôn nhiệt độ/độ ẩm từ request headers (nếu ESP32 có gửi kèm)
-  room_temp = request.headers.get("X-Room-Temp", latest_room_temp)
-  room_hum = request.headers.get("X-Room-Hum", latest_room_hum)
-  try:
-    room_temp = str(round(float(room_temp), 1))
-    room_hum = str(round(float(room_hum), 1))
-    latest_room_temp = room_temp
-    latest_room_hum = room_hum
-  except:
-    pass
+  # SỬA LỖI: Chỉ cập nhật nếu request thực sự có gửi kèm header X-Room-Temp và X-Room-Hum
+  if "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
+    room_temp = request.headers.get("X-Room-Temp")
+    room_hum = request.headers.get("X-Room-Hum")
+    try:
+      room_temp = str(round(float(room_temp), 1))
+      room_hum = str(round(float(room_hum), 1))
+      latest_room_temp = room_temp
+      latest_room_hum = room_hum
+    except:
+      room_temp = latest_room_temp
+      room_hum = latest_room_hum
+  else:
+    room_temp = latest_room_temp
+    room_hum = latest_room_hum
 
   # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
   if request.is_json:
@@ -136,7 +141,7 @@ def process_audio():
       # Đẩy trạng thái khởi động sang sv2 ngay lập tức
       send_to_sv2({
           "event": "system_boot",
-          "bot_state": "NGU",
+          "bot_state": "Ngủ",
           "bot_mode": "SET_MODE_0",
           "alarm_state": "OFF",
           "room_temp": room_temp,
@@ -156,7 +161,7 @@ def process_audio():
         resp = make_response(
             send_file(raw_pcm_reply, mimetype="application/octet-stream")
         )
-        resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
+        resp.headers["Bot-State"] = "Thức" if is_awake else "Ngủ"
         resp.headers["Bot-Mode"] = "SET_MODE_0"
         resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
         resp.headers["Alarm-Hour"] = (
@@ -447,7 +452,7 @@ def process_audio():
     elif (
         "bật cài đặt" in spoken_text
         or "hey google" in spoken_text
-        or "mode 5" in spoken_text
+        or "1 2 3 4" in spoken_text
     ):
       reply_text = "Đã chuyển sang chế độ nháy nhạc."
       current_bot_mode = "SET_MODE_5"
