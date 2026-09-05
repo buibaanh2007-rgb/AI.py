@@ -14,7 +14,6 @@ recognizer = sr.Recognizer()
 
 
 # --- CẤU HÌNH KẾT NỐI SV2 ---
-# Sếp nhớ thay đổi IP và cổng của sv2 cho chính xác nhé
 SV2_URL = "http://192.168.1.10:9090/api/sync"
 
 # Biến toàn cục quản lý trạng thái thức/ngủ và timeout 60 giây
@@ -32,7 +31,7 @@ alarm_is_active = False
 # Biến lưu trữ dữ liệu nhận từ sv2 (nếu cần dùng chung)
 sv2_shared_data = {}
 
-print("[Server sv1] Đã sẵn sàng chạy kèm cơ chế truyền/nhận dữ liệu với sv2!")
+print("[Server sv1] Đã sẵn sàng chạy kèm cơ chế tự động đẩy dữ liệu sang sv2!")
 
 
 def remove_accents(input_str):
@@ -42,11 +41,11 @@ def remove_accents(input_str):
 
 # --- HÀM TRUYỀN DỮ LIỆU ĐI SV2 ---
 def send_to_sv2(payload):
-    """Hàm gửi dữ liệu sang sv2 (chạy ngầm hoặc gọi trực tiếp)"""
+    """Hàm gửi dữ liệu sang sv2"""
     try:
         response = requests.post(SV2_URL, json=payload, timeout=2)
         if response.status_code == 200:
-            print(f"[sv1 -> sv2] Đã gửi data thành công: {payload}")
+            print(f"[sv1 -> sv2] Đã đẩy data thành công: {payload}")
         else:
             print(f"[sv1 -> sv2] Phản hồi lỗi từ sv2: {response.status_code}")
     except Exception as e:
@@ -80,6 +79,15 @@ def process_audio():
     res_alarm_minute = "NONE"
     res_alarm_state = "ON" if alarm_is_active else "OFF"  
 
+    # Lấy luôn nhiệt độ/độ ẩm từ request headers (nếu ESP32 có gửi kèm)
+    room_temp = request.headers.get("X-Room-Temp", "25")
+    room_hum = request.headers.get("X-Room-Hum", "50")
+    try:
+        room_temp = str(round(float(room_temp), 1))
+        room_hum = str(round(float(room_hum), 1))
+    except:
+        pass
+
     # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
     if request.is_json:
         data = request.get_json()
@@ -92,6 +100,16 @@ def process_audio():
             alarm_period = None
             reply_text = "Kết nối server thành công"
             print(f"[Server] Sự kiện hệ thống - Phản hồi: {reply_text}")
+
+            # Đẩy trạng thái khởi động sang sv2 ngay lập tức
+            send_to_sv2({
+                "event": "system_boot",
+                "bot_state": "NGU",
+                "bot_mode": "SET_MODE_0",
+                "alarm_state": "OFF",
+                "room_temp": room_temp,
+                "room_hum": room_hum
+            })
 
             mp3_path = "response.mp3"
             raw_pcm_reply = "response.pcm"
@@ -125,6 +143,15 @@ def process_audio():
     # 3. Nhận audio thô từ ESP32
     audio_data = request.data
     if len(audio_data) < 500:
+        # Dù audio ngắn / khoảng lặng, vẫn định kỳ đồng bộ trạng thái sang sv2
+        send_to_sv2({
+            "event": "heartbeat_sync",
+            "bot_state": "THUC" if is_awake else "NGU",
+            "bot_mode": "DEFAULT",
+            "alarm_state": "ON" if alarm_is_active else "OFF",
+            "room_temp": room_temp,
+            "room_hum": room_hum
+        })
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "DEFAULT"
@@ -241,14 +268,6 @@ def process_audio():
                         res_alarm_minute = str(alarm_minute)
                         waiting_for_alarm = False
 
-                        # Bắn dữ liệu báo thức mới sang sv2
-                        send_to_sv2({
-                            "event": "alarm_set",
-                            "hour": alarm_hour,
-                            "minute": alarm_minute,
-                            "state": "ON"
-                        })
-
         # ƯU TIÊN 2: Hủy / tắt khẩn cấp trực tiếp
         elif any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]) or any(k in text_clean for k in ["huy", "xoa bao thuc", "bo bao thuc"]):
             waiting_for_alarm = False
@@ -259,16 +278,12 @@ def process_audio():
             reply_text = "Đã xóa báo thức đã đặt ạ."
             current_bot_mode = "SET_MODE_1" 
             res_alarm_state = "OFF"
-            
-            send_to_sv2({"event": "alarm_cancelled", "state": "OFF"})
 
         elif any(kw in spoken_text for kw in ["tắt báo thức", "dừng báo thức", "tắt chuông", "dừng chuông"]):
             alarm_is_active = False
             reply_text = "Đã tắt báo thức ạ."
             current_bot_mode = "ALARM_STOP" 
             res_alarm_state = "OFF"
-            
-            send_to_sv2({"event": "alarm_stopped", "state": "OFF"})
 
         # ƯU TIÊN 3: Kiểm tra báo thức
         elif any(k in spoken_text for k in ["kiểm tra báo thức", "xem báo thức", "báo thức mấy giờ"]):
@@ -288,28 +303,10 @@ def process_audio():
             reply_text = "Sếp muốn đặt thế nào?"
             current_bot_mode = "SET_MODE_1" 
 
-        # ƯU TIÊN 5: Nhiệt độ phòng / Cảm biến (Đã bổ sung tự động lấy và đẩy `room_temp`, `room_hum` sang sv2)
+        # ƯU TIÊN 5: Nhiệt độ phòng / Cảm biến
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
-            room_temp = request.headers.get("X-Room-Temp", "25")
-            room_hum = request.headers.get("X-Room-Hum", "50")
-            
-            try:
-                room_temp = str(round(float(room_temp), 1))
-                room_hum = str(round(float(room_hum), 1))
-            except:
-                pass
-
             reply_text = f"Nhiệt độ {room_temp} độ C và độ ẩm {room_hum} phần trăm"
             current_bot_mode = "SET_MODE_3" 
-
-            # Truyền dữ liệu cảm biến sang sv2 (cập nhật đồng thời khóa room_temp và room_hum để sv2 nhận diện trực tiếp)
-            send_to_sv2({
-                "event": "sensor_update",
-                "room_temp": room_temp,
-                "room_hum": room_hum,
-                "temp": room_temp,
-                "hum": room_hum
-            })
 
         # ƯU TIÊN 6: Hỏi giờ hiện tại
         elif "mấy giờ rồi" in spoken_text or "bây giờ là mấy giờ" in spoken_text:
@@ -367,8 +364,6 @@ def process_audio():
             reply_text = "Đã chuyển sang chế độ nháy nhạc."
             current_bot_mode = "SET_MODE_5"
             is_awake = False  
-            
-            send_to_sv2({"event": "mode_change", "mode": "SET_MODE_5"})
 
         # ƯU TIÊN 10: Đi ngủ
         elif "đi ngủ đi" in spoken_text or "ngủ đi" in spoken_text:
@@ -384,7 +379,24 @@ def process_audio():
             reply_text = "Sếp nói lại đi."
             current_bot_mode = "SET_MODE_1" 
 
-    # 5. Tạo file âm thanh phản hồi
+    # 5. TỰ ĐỘNG ĐẨY TẤT CẢ DỮ LIỆU SANG SV2 MỖI KHI CÓ AUDIO HOẶC TƯƠNG TÁC
+    payload_to_sv2 = {
+        "event": "full_state_sync",
+        "spoken_text": spoken_text,
+        "bot_state": "THUC" if is_awake else "NGU",
+        "bot_mode": current_bot_mode,
+        "alarm_state": res_alarm_state,
+        "alarm_hour": alarm_hour,
+        "alarm_minute": alarm_minute,
+        "alarm_period": alarm_period,
+        "room_temp": room_temp,
+        "room_hum": room_hum,
+        "temp": room_temp,
+        "hum": room_hum
+    }
+    send_to_sv2(payload_to_sv2)
+
+    # 6. Tạo file âm thanh phản hồi
     mp3_path = "response.mp3"
     raw_pcm_reply = "response.pcm"
 
