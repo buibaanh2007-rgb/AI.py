@@ -15,7 +15,7 @@ recognizer = sr.Recognizer()
 
 # --- CẤU HÌNH KẾT NỐI SV2 ---
 # Sếp nhớ thay đổi IP và cổng của sv2 cho chính xác nhé
-SV2_URL = "http://<IP_HOẶC_HOST_CỦA_SV2>:8090/api/sync"
+SV2_URL = "http://192.168.1.10:9090/api/sync"
 
 # Biến toàn cục quản lý trạng thái thức/ngủ và timeout 60 giây
 is_awake = False
