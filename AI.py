@@ -24,6 +24,10 @@ alarm_minute = None
 alarm_period = None 
 alarm_is_active = False 
 
+# Biến toàn cục lưu trạng thái cảm biến mới nhất từ S3 để phục vụ Web Dashboard & Giọng nói
+current_room_temp = "25.0"
+current_room_hum = "50.0"
+
 print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 2 giây tối ưu!")
 
 
@@ -37,9 +41,22 @@ def home():
     return "AI Speaker Server Running!"
 
 
+# API Endpoint nhận dữ liệu cảm biến định kỳ từ ESP32-S3
+@app.route("/api/update-sensor", methods=["POST"])
+def update_sensor():
+    global current_room_temp, current_room_hum
+    if request.is_json:
+        data = request.get_json()
+        current_room_temp = str(data.get("temp", "25.0"))
+        current_room_hum = str(data.get("hum", "50.0"))
+        return {"status": "success"}, 200
+    return {"status": "error"}, 400
+
+
 @app.route("/process-audio", methods=["POST"])
 def process_audio():
     global is_awake, last_active_time, waiting_for_alarm, alarm_hour, alarm_minute, alarm_period, alarm_is_active
+    global current_room_temp, current_room_hum
 
     current_bot_mode = "DEFAULT"
     
@@ -251,21 +268,19 @@ def process_audio():
             current_bot_mode = "SET_MODE_1" 
             print("[Server] Bắt đầu tiến trình đặt báo thức...")
 
-        # ƯU TIÊN 5: Nhiệt độ phòng / Cảm biến
+        # ƯU TIÊN 5: Nhiệt độ phòng / Cảm biến (Lấy trực tiếp từ biến cập nhật định kỳ)
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
-            room_temp = request.headers.get("X-Room-Temp", "25")
-            room_hum = request.headers.get("X-Room-Hum", "50")
-            
             try:
-                room_temp = str(round(float(room_temp), 1))
-                room_hum = str(round(float(room_hum), 1))
+                room_temp = str(round(float(current_room_temp), 1))
+                room_hum = str(round(float(current_room_hum), 1))
             except:
-                pass
+                room_temp = current_room_temp
+                room_hum = current_room_hum
 
             reply_text = f"Nhiệt độ {room_temp} độ C và độ ẩm {room_hum} phần trăm"
             current_bot_mode = "SET_MODE_3" 
 
-        # ƯU TIÊN 6: Hỏi giờ hiện tại (Đã loại bỏ chữ "giờ" đơn lẻ để tránh nuốt lệnh khác)
+        # ƯU TIÊN 6: Hỏi giờ hiện tại
         elif "mấy giờ rồi" in spoken_text or "bây giờ là mấy giờ" in spoken_text:
             now = datetime.now()
             reply_text = (
@@ -333,7 +348,7 @@ def process_audio():
         elif "bật cài đặt" in spoken_text or "hey google" in spoken_text or "mode 5" in spoken_text:
             reply_text = "Đã chuyển sang chế độ nháy nhạc."
             current_bot_mode = "SET_MODE_5"
-            is_awake = False  # Đưa bot về trạng thái chuẩn bị bàn giao toàn quyền
+            is_awake = False 
             print("[Server] Kích hoạt MODE 5: Bàn giao toàn quyền cho phần cứng S3 và H3.")
 
         # ƯU TIÊN 10: Lệnh đi ngủ
