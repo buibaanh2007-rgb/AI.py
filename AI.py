@@ -11,7 +11,7 @@ import speech_recognition as sr
 
 app = Flask(__name__)
 recognizer = sr.Recognizer()
-requests.post("http://<IP_SV2>:9090/api/sync", json={"room_temp": temp_value, "room_hum": hum_value}, timeout=2)
+
 
 # --- CẤU HÌNH KẾT NỐI SV2 ---
 # Sếp nhớ thay đổi IP và cổng của sv2 cho chính xác nhé
@@ -288,7 +288,7 @@ def process_audio():
             reply_text = "Sếp muốn đặt thế nào?"
             current_bot_mode = "SET_MODE_1" 
 
-        # ƯU TIÊN 5: Nhiệt độ phòng / Cảm biến
+        # ƯU TIÊN 5: Nhiệt độ phòng / Cảm biến (Đã bổ sung tự động lấy và đẩy `room_temp`, `room_hum` sang sv2)
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
             room_temp = request.headers.get("X-Room-Temp", "25")
             room_hum = request.headers.get("X-Room-Hum", "50")
@@ -302,9 +302,11 @@ def process_audio():
             reply_text = f"Nhiệt độ {room_temp} độ C và độ ẩm {room_hum} phần trăm"
             current_bot_mode = "SET_MODE_3" 
 
-            # Truyền dữ liệu cảm biến sang sv2 nếu cần
+            # Truyền dữ liệu cảm biến sang sv2 (cập nhật đồng thời khóa room_temp và room_hum để sv2 nhận diện trực tiếp)
             send_to_sv2({
                 "event": "sensor_update",
+                "room_temp": room_temp,
+                "room_hum": room_hum,
                 "temp": room_temp,
                 "hum": room_hum
             })
