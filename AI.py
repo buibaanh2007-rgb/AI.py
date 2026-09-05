@@ -87,16 +87,24 @@ def api_toggle_mode5():
     return jsonify({"status": "success", "mode_5_active": mode_5_active})
 
 
-# API Endpoint nhận dữ liệu cảm biến định kỳ từ ESP32-S3
+# API Endpoint nhận dữ liệu cảm biến định kỳ từ ESP32-S3 & trả kèm trạng thái báo thức xuống phần cứng
 @app.route("/api/update-sensor", methods=["POST"])
 def update_sensor():
-    global current_room_temp, current_room_hum
+    global current_room_temp, current_room_hum, alarm_is_active, alarm_hour, alarm_minute
     if request.is_json:
         data = request.get_json()
         current_room_temp = str(data.get("temp", "25.0"))
         current_room_hum = str(data.get("hum", "50.0"))
-        return {"status": "success"}, 200
-    return {"status": "error"}, 400
+        
+        # Trả về kèm trạng thái báo thức để bên phần cứng (S3) đồng bộ ngay lập tức
+        return jsonify({
+            "status": "success",
+            "alarm_is_active": alarm_is_active,
+            "alarm_hour": alarm_hour if alarm_hour is not None else 0,
+            "alarm_minute": alarm_minute if alarm_minute is not None else 0
+        }), 200
+        
+    return jsonify({"status": "error"}), 400
 
 
 @app.route("/process-audio", methods=["POST"])
