@@ -49,7 +49,6 @@ def send_to_sv2(payload):
         if response.status_code != 200:
             print(f"[sv1 -> sv2] Phản hồi lỗi từ sv2: {response.status_code}")
     except Exception as e:
-        # Bắt lỗi ngầm để không làm sập luồng chính hoặc luồng nền
         pass
 
 
@@ -58,7 +57,7 @@ def background_sync_worker():
     global is_awake, alarm_is_active, alarm_hour, alarm_minute, latest_room_temp, latest_room_hum
     print("[Server sv1] Luồng nền đồng bộ tự động sang sv2 đã khởi động!")
     while True:
-        time.sleep(1)  # Đã chỉnh sửa thành 1 giây bắn 1 lần theo yêu cầu của sếp
+        time.sleep(1)
         try:
             payload = {
                 "event": "background_heartbeat",
@@ -109,7 +108,6 @@ def process_audio():
     res_alarm_minute = "NONE"
     res_alarm_state = "ON" if alarm_is_active else "OFF"
 
-    # SỬA LỖI: Chỉ cập nhật nếu request thực sự có gửi kèm header X-Room-Temp và X-Room-Hum
     if "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
         room_temp = request.headers.get("X-Room-Temp")
         room_hum = request.headers.get("X-Room-Hum")
@@ -138,7 +136,6 @@ def process_audio():
             reply_text = "Kết nối server thành công"
             print(f"[Server] Sự kiện hệ thống - Phản hồi: {reply_text}")
 
-            # Đẩy trạng thái khởi động sang sv2 ngay lập tức
             send_to_sv2({
                 "event": "system_boot",
                 "bot_state": "Ngủ",
@@ -161,15 +158,12 @@ def process_audio():
                 resp = make_response(
                     send_file(raw_pcm_reply, mimetype="application/octet-stream")
                 )
-                resp.headers["Bot-State"] = "Thức" if is_awake else "Ngủ"
+                # SỬA LỖI: Dùng giá trị ASCII không dấu để tránh UnicodeEncodeError trên HTTP Header
+                resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
                 resp.headers["Bot-Mode"] = "SET_MODE_0"
                 resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
-                resp.headers["Alarm-Hour"] = (
-                    str(alarm_hour) if alarm_hour is not None else "NONE"
-                )
-                resp.headers["Alarm-Minute"] = (
-                    str(alarm_minute) if alarm_minute is not None else "NONE"
-                )
+                resp.headers["Alarm-Hour"] = str(alarm_hour) if alarm_hour is not None else "NONE"
+                resp.headers["Alarm-Minute"] = str(alarm_minute) if alarm_minute is not None else "NONE"
                 return resp
         return "", 204
 
@@ -507,6 +501,7 @@ def process_audio():
         resp = make_response(
             send_file(raw_pcm_reply, mimetype="application/octet-stream")
         )
+        # SỬA LỖI: Dùng giá trị chuẩn ASCII (THUC / NGU) thay cho chuỗi tiếng Việt có dấu
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = current_bot_mode
         resp.headers["Alarm-State"] = res_alarm_state
@@ -522,7 +517,6 @@ def process_audio():
 
 
 if __name__ == "__main__":
-    # Khởi chạy luồng nền đồng bộ ngầm định kỳ độc lập trước khi chạy Flask app
     sync_thread = threading.Thread(target=background_sync_worker, daemon=True)
     sync_thread.start()
 
