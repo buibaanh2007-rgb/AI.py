@@ -14,8 +14,7 @@ app = Flask(__name__)
 recognizer = sr.Recognizer()
 
 # --- CẤU HÌNH KẾT NỐI VỚI SERVER 2 (SV2) ---
-# Sếp có thể thay đổi IP/Port của sv2 cho phù hợp với hệ thống thực tế
-SV2_URL = "http://192.168.1.10:9890"  # Hoặc địa chỉ IP của sv2
+SV2_URL = "http://192.168.1.10:9890"  # Sếp thay đổi IP/Port của sv2 nếu cần
 
 # Biến toàn cục quản lý trạng thái thức/ngủ và timeout 60 giây
 is_awake = False
@@ -29,7 +28,7 @@ alarm_minute = None
 alarm_period = None
 alarm_is_active = False
 
-# Biến lưu trữ dữ liệu môi trường gần nhất để gửi sang sv2
+# Biến lưu trữ dữ liệu môi trường gần nhất
 latest_room_temp = "25.0"
 latest_room_hum = "60.0"
 
@@ -44,7 +43,7 @@ def remove_accents(input_str):
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
 
-# --- HÀM LUỒNG NỀN ĐỒNG BỘ DỮ LIỆU SANG SV2 (MỖI 1 GIÂY) ---
+# --- LUỒNG NỀN ĐỒNG BỘ DỮ LIỆU SANG SV2 (MỖI 1 GIÂY) ---
 def sync_to_sv2_background():
     global latest_room_temp, latest_room_hum, sv2_shared_data, is_awake, alarm_is_active
     print("[Server sv1] Luồng nền đồng bộ tự động sang sv2 đã khởi động!")
@@ -56,18 +55,14 @@ def sync_to_sv2_background():
                 "bot_state": "THUC" if is_awake else "NGU",
                 "alarm_active": alarm_is_active,
             }
-            # Gửi dữ liệu sang sv2 (timeout ngắn để không làm nghẽn luồng)
             response = requests.post(
                 f"{SV2_URL}/api/sync", json=payload, timeout=1
             )
             if response.status_code == 200:
-                # Nhận dữ liệu phản hồi ngược lại từ sv2 nếu có
                 if response.is_json:
                     sv2_shared_data = response.json()
-        except Exception as e:
-            # Bỏ qua lỗi kết nối tạm thời để luồng tiếp tục chạy ngầm
+        except Exception:
             pass
-
         time.sleep(1)
 
 
@@ -76,7 +71,7 @@ def home():
     return "AI Speaker Server Running!"
 
 
-# --- ENDPOINT NHẬN TÍN HIỆU HOẶC CẬP NHẬT TỪ NGOÀI / ESP32 ---
+# --- ENDPOINT NHẬN CẬP NHẬT SENSOR TỪ ESP32 (ĐÃ FIX LỖI 404) ---
 @app.route("/update-sensor", methods=["GET", "POST"])
 def update_sensor():
     global latest_room_temp, latest_room_hum
@@ -105,12 +100,11 @@ def process_audio():
 
     current_bot_mode = "DEFAULT"
 
-    # Biến lưu thông tin báo thức trả về cho ESP32
     res_alarm_hour = "NONE"
     res_alarm_minute = "NONE"
     res_alarm_state = "ON" if alarm_is_active else "OFF"
 
-    # Cập nhật nhiệt độ độ ẩm nếu có từ header của ESP32
+    # Cập nhật nhiệt độ độ ẩm từ header của ESP32 nếu có
     if "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
         try:
             latest_room_temp = str(
@@ -491,7 +485,6 @@ def process_audio():
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = current_bot_mode
 
-        # Đẩy các thông số báo thức xuống headers
         resp.headers["Alarm-State"] = res_alarm_state
         resp.headers["Alarm-Hour"] = (
             str(alarm_hour) if alarm_hour is not None else "NONE"
