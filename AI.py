@@ -99,18 +99,28 @@ def receive_from_sv2():
 
 
 # --- ENDPOINT NHẬN DỮ LIỆU CẢM BIẾN TỪ ESP32 (Khắc phục lỗi 404) ---
-@app.route("/update-sensor", methods=["POST"])
+@app.route("/update-sensor", methods=["GET", "POST"])
 def update_sensor():
     global latest_room_temp, latest_room_hum
+    # Nếu ESP32 gửi qua query params trên URL (vd: /update-sensor?temp=25&hum=60)
+    if request.args.get("temp"):
+        latest_room_temp = str(request.args.get("temp"))
+    if request.args.get("hum"):
+        latest_room_hum = str(request.args.get("hum"))
+        
+    # Nếu gửi qua JSON
     if request.is_json:
         data = request.get_json()
         if "temp" in data:
             latest_room_temp = str(data.get("temp"))
         if "hum" in data:
             latest_room_hum = str(data.get("hum"))
-    elif "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
+            
+    # Nếu gửi qua Headers
+    if "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
         latest_room_temp = str(request.headers.get("X-Room-Temp"))
         latest_room_hum = str(request.headers.get("X-Room-Hum"))
+        
     return "", 204
 
 
