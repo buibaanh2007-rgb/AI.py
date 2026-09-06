@@ -1,7 +1,6 @@
 from datetime import datetime
 import os
 import re
-import threading
 import time
 import unicodedata
 
@@ -13,9 +12,6 @@ import speech_recognition as sr
 app = Flask(__name__)
 recognizer = sr.Recognizer()
 
-# --- CẤU HÌNH KẾT NỐI VỚI SERVER 2 (SV2) ---
-SV2_URL = "http://192.168.1.10:9890"  # Sếp thay đổi IP/Port của sv2 nếu cần
-
 # Biến toàn cục quản lý trạng thái thức/ngủ và timeout 60 giây
 is_awake = False
 last_active_time = 0
@@ -25,15 +21,8 @@ SLEEP_TIMEOUT = 60
 waiting_for_alarm = False
 alarm_hour = None
 alarm_minute = None
-alarm_period = None
-alarm_is_active = False
-
-# Biến lưu trữ dữ liệu môi trường gần nhất
-latest_room_temp = "25.0"
-latest_room_hum = "60.0"
-
-# Biến lưu trữ dữ liệu nhận về từ sv2 (nếu cần dùng chung)
-sv2_shared_data = {}
+alarm_period = None 
+alarm_is_active = False 
 
 print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 2 giây tối ưu!")
 
@@ -43,78 +32,21 @@ def remove_accents(input_str):
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
 
-# --- LUỒNG NỀN ĐỒNG BỘ DỮ LIỆU SANG SV2 (MỖI 1 GIÂY) ---
-def sync_to_sv2_background():
-    global latest_room_temp, latest_room_hum, sv2_shared_data, is_awake, alarm_is_active
-    print("[Server sv1] Luồng nền đồng bộ tự động sang sv2 đã khởi động!")
-    while True:
-        try:
-            payload = {
-                "temp": latest_room_temp,
-                "hum": latest_room_hum,
-                "bot_state": "THUC" if is_awake else "NGU",
-                "alarm_active": alarm_is_active,
-            }
-            response = requests.post(
-                f"{SV2_URL}/api/sync", json=payload, timeout=1
-            )
-            if response.status_code == 200:
-                if response.is_json:
-                    sv2_shared_data = response.json()
-        except Exception:
-            pass
-        time.sleep(1)
-
-
 @app.route("/")
 def home():
     return "AI Speaker Server Running!"
 
 
-# --- ENDPOINT NHẬN CẬP NHẬT SENSOR TỪ ESP32 (ĐÃ FIX LỖI 404) ---
-@app.route("/update-sensor", methods=["GET", "POST"])
-def update_sensor():
-    global latest_room_temp, latest_room_hum
-    if request.args.get("temp"):
-        latest_room_temp = str(request.args.get("temp"))
-    if request.args.get("hum"):
-        latest_room_hum = str(request.args.get("hum"))
-
-    if request.is_json:
-        data = request.get_json()
-        if "temp" in data:
-            latest_room_temp = str(data.get("temp"))
-        if "hum" in data:
-            latest_room_hum = str(data.get("hum"))
-
-    if "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
-        latest_room_temp = str(request.headers.get("X-Room-Temp"))
-        latest_room_hum = str(request.headers.get("X-Room-Hum"))
-
-    return "", 204
-
-
 @app.route("/process-audio", methods=["POST"])
 def process_audio():
-    global is_awake, last_active_time, waiting_for_alarm, alarm_hour, alarm_minute, alarm_period, alarm_is_active, latest_room_temp, latest_room_hum
+    global is_awake, last_active_time, waiting_for_alarm, alarm_hour, alarm_minute, alarm_period, alarm_is_active
 
     current_bot_mode = "DEFAULT"
-
+    
+    # Biến lưu thông tin báo thức trả về cho ESP32
     res_alarm_hour = "NONE"
     res_alarm_minute = "NONE"
-    res_alarm_state = "ON" if alarm_is_active else "OFF"
-
-    # Cập nhật nhiệt độ độ ẩm từ header của ESP32 nếu có
-    if "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
-        try:
-            latest_room_temp = str(
-                round(float(request.headers.get("X-Room-Temp")), 1)
-            )
-            latest_room_hum = str(
-                round(float(request.headers.get("X-Room-Hum")), 1)
-            )
-        except:
-            pass
+    res_alarm_state = "ON" if alarm_is_active else "OFF"  
 
     # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
     if request.is_json:
@@ -144,12 +76,8 @@ def process_audio():
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
                 resp.headers["Bot-Mode"] = "SET_MODE_0"
                 resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
-                resp.headers["Alarm-Hour"] = (
-                    str(alarm_hour) if alarm_hour is not None else "NONE"
-                )
-                resp.headers["Alarm-Minute"] = (
-                    str(alarm_minute) if alarm_minute is not None else "NONE"
-                )
+                resp.headers["Alarm-Hour"] = str(alarm_hour) if alarm_hour is not None else "NONE"
+                resp.headers["Alarm-Minute"] = str(alarm_minute) if alarm_minute is not None else "NONE"
                 return resp
         return "", 204
 
@@ -193,9 +121,7 @@ def process_audio():
         print("[Server] Không nghe rõ nội dung hoặc khoảng lặng.")
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
-        resp.headers["Bot-Mode"] = (
-            "SET_MODE_1" if waiting_for_alarm else "DEFAULT"
-        )
+        resp.headers["Bot-Mode"] = "SET_MODE_1" if waiting_for_alarm else "DEFAULT"
         resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
         return resp
     except sr.RequestError as e:
@@ -208,7 +134,7 @@ def process_audio():
         if any(word in spoken_text for word in wake_words):
             is_awake = True
             reply_text = "Chào sếp, sếp cần giúp gì ạ?"
-            current_bot_mode = "SET_MODE_1"
+            current_bot_mode = "SET_MODE_1" 
             print("[Server] Trạng thái: ĐÃ THỨC.")
         else:
             resp = make_response("", 204)
@@ -219,42 +145,30 @@ def process_audio():
     else:
         text_clean = remove_accents(spoken_text)
 
-        # ƯU TIÊN 1: Đang trong tiến trình đặt báo thức
+        # ƯU TIÊN 1: Đang trong tiến trình đặt báo thức (hỏi-đáp giờ)
         if waiting_for_alarm:
-            if any(
-                k in spoken_text
-                for k in [
-                    "hủy báo thức",
-                    "xóa báo thức",
-                    "bỏ báo thức",
-                    "hủy lịch",
-                ]
-            ) or any(
-                k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua"]
-            ):
+            if any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]) or any(k in text_clean for k in ["hủy", "thôi", "dừng", "khong dat nua"]):
                 waiting_for_alarm = False
                 alarm_hour = None
                 alarm_minute = None
                 alarm_period = None
                 alarm_is_active = False
                 reply_text = "Đã hủy cài đặt báo thức."
-                current_bot_mode = "SET_MODE_1"
+                current_bot_mode = "SET_MODE_1" 
                 res_alarm_state = "OFF"
                 print("[Server] Đã hủy đặt báo thức theo yêu cầu.")
             else:
-                match_full = re.search(r"(\d+)\s*(?:giờ|h|:)\s*(\d+)?", spoken_text)
+                match_full = re.search(r'(\d+)\s*(?:giờ|h|:)\s*(\d+)?', spoken_text)
                 if match_full:
                     alarm_hour = int(match_full.group(1))
                     if match_full.group(2):
                         alarm_minute = int(match_full.group(2))
-
+               
                 words = spoken_text.split()
                 for i, w in enumerate(words):
                     if w.isdigit():
                         val = int(w)
-                        clean_next_word = (
-                            remove_accents(words[i + 1]) if i + 1 < len(words) else ""
-                        )
+                        clean_next_word = remove_accents(words[i+1]) if i + 1 < len(words) else ""
                         if "phut" in clean_next_word:
                             alarm_minute = val
                         elif any(h in clean_next_word for h in ["gio", "h"]):
@@ -266,22 +180,18 @@ def process_audio():
 
                 if any(s in text_clean for s in ["sáng", "am"]):
                     alarm_period = "sáng"
-                elif any(
-                    b in text_clean for b in ["chiều", "toi", "trua", "pm", "chieu"]
-                ):
+                elif any(b in text_clean for b in ["chiều", "toi", "trua", "pm", "chieu"]):
                     alarm_period = "chiều"
 
                 if alarm_hour is None:
                     reply_text = "Sếp muốn đặt lúc mấy giờ ạ?"
-                    current_bot_mode = "SET_MODE_1"
+                    current_bot_mode = "SET_MODE_1" 
                 elif alarm_minute is None:
                     reply_text = "Sếp muốn đặt phút thứ mấy ạ?"
-                    current_bot_mode = "SET_MODE_1"
+                    current_bot_mode = "SET_MODE_1" 
                 else:
                     if not (0 <= alarm_hour <= 23 and 0 <= alarm_minute <= 59):
-                        reply_text = (
-                            "Giờ hoặc phút không hợp lệ rồi, sếp đọc lại giúp em nhé."
-                        )
+                        reply_text = "Giờ hoặc phút không hợp lệ rồi, sếp đọc lại giúp em nhé."
                         current_bot_mode = "SET_MODE_1"
                         alarm_hour = None
                         alarm_minute = None
@@ -290,95 +200,82 @@ def process_audio():
                         if alarm_period is None:
                             alarm_period = "sáng" if alarm_hour < 12 else "chiều"
 
-                        final_time_str = (
-                            f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
-                        )
+                        final_time_str = f"{alarm_hour} giờ {alarm_minute} phút {alarm_period}"
                         reply_text = f"Đã rõ, đặt báo thức lúc {final_time_str}"
-                        current_bot_mode = "SET_MODE_1"
-
+                        current_bot_mode = "SET_MODE_1" 
+                        
                         alarm_is_active = True
                         res_alarm_state = "ON"
                         res_alarm_hour = str(alarm_hour)
                         res_alarm_minute = str(alarm_minute)
-
-                        print(
-                            f"[Server] Thiết lập thành công báo thức:"
-                            f" {final_time_str}"
-                        )
+                        
+                        print(f"[Server] Thiết lập thành công báo thức: {final_time_str}")
                         waiting_for_alarm = False
 
         # ƯU TIÊN 2: Các lệnh hủy / tắt khẩn cấp trực tiếp
-        elif any(
-            k in spoken_text
-            for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]
-        ) or any(k in text_clean for k in ["huy", "xoa bao thuc", "bo bao thuc"]):
+        elif any(k in spoken_text for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]) or any(k in text_clean for k in ["huy", "xoa bao thuc", "bo bao thuc"]):
             waiting_for_alarm = False
             alarm_hour = None
             alarm_minute = None
             alarm_period = None
             alarm_is_active = False
             reply_text = "Đã xóa báo thức đã đặt ạ."
-            current_bot_mode = "SET_MODE_1"
+            current_bot_mode = "SET_MODE_1" 
             res_alarm_state = "OFF"
             print("[Server] Đã hủy báo thức theo yêu cầu.")
 
-        elif any(
-            kw in spoken_text
-            for kw in [
-                "tắt báo thức",
-                "dừng báo thức",
-                "tắt chuông",
-                "dừng chuông",
-            ]
-        ):
+        elif any(kw in spoken_text for kw in ["tắt báo thức", "dừng báo thức", "tắt chuông", "dừng chuông"]):
             alarm_is_active = False
             reply_text = "Đã tắt báo thức ạ."
-            current_bot_mode = "ALARM_STOP"
+            current_bot_mode = "ALARM_STOP" 
             res_alarm_state = "OFF"
             print("[Server] Đã nhận lệnh tắt báo thức qua giọng nói.")
 
         # ƯU TIÊN 3: Kiểm tra trạng thái báo thức
-        elif any(
-            k in spoken_text for k in ["kiểm tra báo thức", "xem báo thức", "báo thức mấy giờ"]
-        ):
+        elif any(k in spoken_text for k in ["kiểm tra báo thức", "xem báo thức", "báo thức mấy giờ"]):
             if not alarm_is_active or alarm_hour is None or alarm_minute is None:
                 reply_text = "Báo thức đang tắt."
             else:
-                period_str = (
-                    alarm_period
-                    if alarm_period
-                    else ("sáng" if alarm_hour < 12 else "chiều")
-                )
+                period_str = alarm_period if alarm_period else ("sáng" if alarm_hour < 12 else "chiều")
                 reply_text = f"Báo thức đang bật lúc {alarm_hour} giờ {alarm_minute} phút {period_str}."
             current_bot_mode = "SET_MODE_1"
             print(f"[Server] Kiểm tra báo thức: {reply_text}")
 
-        # ƯU TIÊN 4: Đặt báo thức mới
+        # ƯU TIÊN 4: Yêu cầu bắt đầu đặt báo thức mới
         elif "đặt báo thức" in spoken_text or "báo thức" in spoken_text:
             waiting_for_alarm = True
             alarm_hour = None
             alarm_minute = None
             alarm_period = None
             reply_text = "Sếp muốn đặt thế nào?"
-            current_bot_mode = "SET_MODE_1"
+            current_bot_mode = "SET_MODE_1" 
             print("[Server] Bắt đầu tiến trình đặt báo thức...")
 
         # ƯU TIÊN 5: Nhiệt độ phòng / Cảm biến
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
-            reply_text = f"Nhiệt độ {latest_room_temp} độ C và độ ẩm {latest_room_hum} phần trăm"
-            current_bot_mode = "SET_MODE_3"
+            room_temp = request.headers.get("X-Room-Temp", "25")
+            room_hum = request.headers.get("X-Room-Hum", "50")
+            
+            try:
+                room_temp = str(round(float(room_temp), 1))
+                room_hum = str(round(float(room_hum), 1))
+            except:
+                pass
 
-        # ƯU TIÊN 6: Hỏi giờ hiện tại
+            reply_text = f"Nhiệt độ {room_temp} độ C và độ ẩm {room_hum} phần trăm"
+            current_bot_mode = "SET_MODE_3" 
+
+        # ƯU TIÊN 6: Hỏi giờ hiện tại (Đã loại bỏ chữ "giờ" đơn lẻ để tránh nuốt lệnh khác)
         elif "mấy giờ rồi" in spoken_text or "bây giờ là mấy giờ" in spoken_text:
             now = datetime.now()
             reply_text = (
                 f"Bây giờ là {now.strftime('%H')} giờ {now.strftime('%M')} phút"
             )
-            current_bot_mode = "SET_MODE_2"
+            current_bot_mode = "SET_MODE_2" 
 
         # ƯU TIÊN 7: Thời tiết
         elif "thời tiết" in spoken_text:
-            current_bot_mode = "SET_MODE_3"
+            current_bot_mode = "SET_MODE_3" 
             try:
                 location = "HaNam"
                 parts = spoken_text.split("thời tiết")
@@ -398,7 +295,7 @@ def process_audio():
                     data = response.json()
                     temp = data["current_condition"][0]["temp_C"]
                     humidity = data["current_condition"][0]["humidity"]
-
+                    
                     reply_text = f"Thời tiết {location}. nhiệt độ {temp} độ C. độ ẩm {humidity} percent"
                 else:
                     reply_text = "Không tìm thấy thời tiết khu vực này"
@@ -407,24 +304,20 @@ def process_audio():
                 reply_text = "Lỗi kết nối thời tiết"
 
         # ƯU TIÊN 8: Tính toán toán học
-        elif any(
-            op in spoken_text for op in ["cộng", "trừ", "nhân", "chia", "x", "+", "-", "*", "/"]
-        ):
+        elif any(op in spoken_text for op in ["cộng", "trừ", "nhân", "chia", "x", "+", "-", "*", "/"]):
             try:
-                cleaned_text = (
-                    spoken_text.replace("cộng", "+")
-                    .replace("trừ", "-")
-                    .replace("nhân", "*")
-                    .replace(" x ", "*")
-                    .replace(" x", "*")
-                    .replace("x ", "*")
-                    .replace("chia", "/")
+                cleaned_text = (spoken_text
+                                .replace("cộng", "+")
+                                .replace("trừ", "-")
+                                .replace("nhân", "*")
+                                .replace(" x ", "*")
+                                .replace(" x", "*")
+                                .replace("x ", "*")
+                                .replace("chia", "/")
                 )
-
-                expr = "".join(
-                    [c for c in cleaned_text if c in "0123456789+-*/. "]
-                ).strip()
-
+                
+                expr = "".join([c for c in cleaned_text if c in "0123456789+-*/. "]).strip()
+                
                 if expr:
                     result = eval(expr)
                     if isinstance(result, float) and not result.is_integer():
@@ -436,15 +329,11 @@ def process_audio():
                 print(f"[Lỗi tính toán]: {e}")
                 reply_text = "Em không thực hiện được phép tính này."
 
-        # ƯU TIÊN 9: Kích hoạt Mode 5
-        elif (
-            "bật cài đặt" in spoken_text
-            or "hey google" in spoken_text
-            or "mode 5" in spoken_text
-        ):
+        # ƯU TIÊN 9: Kích hoạt Mode 5 (Nháy theo nhạc bằng giọng nói)
+        elif "bật cài đặt" in spoken_text or "hey google" in spoken_text or "mode 5" in spoken_text:
             reply_text = "Đã chuyển sang chế độ nháy nhạc."
             current_bot_mode = "SET_MODE_5"
-            is_awake = False
+            is_awake = False  # Đưa bot về trạng thái chuẩn bị bàn giao toàn quyền
             print("[Server] Kích hoạt MODE 5: Bàn giao toàn quyền cho phần cứng S3 và H3.")
 
         # ƯU TIÊN 10: Lệnh đi ngủ
@@ -455,13 +344,13 @@ def process_audio():
             alarm_minute = None
             alarm_period = None
             reply_text = "Vâng ạ"
-            current_bot_mode = "SET_MODE_0"
+            current_bot_mode = "SET_MODE_0" 
             print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
 
         # NHÁNH MẶC ĐỊNH CUỐI CÙNG
         else:
             reply_text = "Sếp nói lại đi."
-            current_bot_mode = "SET_MODE_1"
+            current_bot_mode = "SET_MODE_1" 
 
     print(f"[Server] Phản hồi: {reply_text} | Bot-Mode: {current_bot_mode}")
 
@@ -483,16 +372,13 @@ def process_audio():
             send_file(raw_pcm_reply, mimetype="application/octet-stream")
         )
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
-        resp.headers["Bot-Mode"] = current_bot_mode
-
+        resp.headers["Bot-Mode"] = current_bot_mode 
+        
+        # Đẩy các thông số báo thức xuống headers đồng bộ tuyệt đối với ESP32-S3
         resp.headers["Alarm-State"] = res_alarm_state
-        resp.headers["Alarm-Hour"] = (
-            str(alarm_hour) if alarm_hour is not None else "NONE"
-        )
-        resp.headers["Alarm-Minute"] = (
-            str(alarm_minute) if alarm_minute is not None else "NONE"
-        )
-
+        resp.headers["Alarm-Hour"] = str(alarm_hour) if alarm_hour is not None else "NONE"
+        resp.headers["Alarm-Minute"] = str(alarm_minute) if alarm_minute is not None else "NONE"
+        
         return resp
     else:
         print("[Lỗi] File PCM phản hồi bị rỗng hoặc lỗi tạo từ ffmpeg!")
@@ -500,8 +386,4 @@ def process_audio():
 
 
 if __name__ == "__main__":
-    # Khởi động luồng nền đồng bộ dữ liệu sang sv2 trước khi chạy app Flask
-    sync_thread = threading.Thread(target=sync_to_sv2_background, daemon=True)
-    sync_thread.start()
-
     app.run(host="0.0.0.0", port=8080, debug=True)
