@@ -98,6 +98,22 @@ def receive_from_sv2():
     return jsonify({"status": "error", "message": "Invalid JSON"}), 400
 
 
+# --- ENDPOINT NHẬN DỮ LIỆU CẢM BIẾN TỪ ESP32 (Khắc phục lỗi 404) ---
+@app.route("/update-sensor", methods=["POST"])
+def update_sensor():
+    global latest_room_temp, latest_room_hum
+    if request.is_json:
+        data = request.get_json()
+        if "temp" in data:
+            latest_room_temp = str(data.get("temp"))
+        if "hum" in data:
+            latest_room_hum = str(data.get("hum"))
+    elif "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
+        latest_room_temp = str(request.headers.get("X-Room-Temp"))
+        latest_room_hum = str(request.headers.get("X-Room-Hum"))
+    return "", 204
+
+
 @app.route("/process-audio", methods=["POST"])
 def process_audio():
     global is_awake, last_active_time, waiting_for_alarm, alarm_hour, alarm_minute, alarm_period, alarm_is_active, latest_room_temp, latest_room_hum
@@ -158,7 +174,6 @@ def process_audio():
                 resp = make_response(
                     send_file(raw_pcm_reply, mimetype="application/octet-stream")
                 )
-                # SỬA LỖI: Dùng giá trị ASCII không dấu để tránh UnicodeEncodeError trên HTTP Header
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
                 resp.headers["Bot-Mode"] = "SET_MODE_0"
                 resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
@@ -501,7 +516,6 @@ def process_audio():
         resp = make_response(
             send_file(raw_pcm_reply, mimetype="application/octet-stream")
         )
-        # SỬA LỖI: Dùng giá trị chuẩn ASCII (THUC / NGU) thay cho chuỗi tiếng Việt có dấu
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = current_bot_mode
         resp.headers["Alarm-State"] = res_alarm_state
