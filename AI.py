@@ -5,7 +5,7 @@ import threading
 import time
 import unicodedata
 
-from flask import Flask, jsonify, make_response, request, send_file
+from flask import Flask, make_response, request, send_file
 from gtts import gTTS
 import requests
 import speech_recognition as sr
@@ -13,8 +13,9 @@ import speech_recognition as sr
 app = Flask(__name__)
 recognizer = sr.Recognizer()
 
-# --- CẤU HÌNH KẾT NỐI SV2 ---
-SV2_URL = "http://192.168.1.10:9090/api/sync"
+# --- CẤU HÌNH KẾT NỐI VỚI SERVER 2 (SV2) ---
+# Sếp có thể thay đổi IP/Port của sv2 cho phù hợp với hệ thống thực tế
+SV2_URL = "http://192.168.1.10:9890"  # Hoặc địa chỉ IP của sv2
 
 # Biến toàn cục quản lý trạng thái thức/ngủ và timeout 60 giây
 is_awake = False
@@ -28,12 +29,14 @@ alarm_minute = None
 alarm_period = None
 alarm_is_active = False
 
-# Biến lưu trữ dữ liệu môi trường gần nhất để luồng ngầm gửi đi
+# Biến lưu trữ dữ liệu môi trường gần nhất để gửi sang sv2
 latest_room_temp = "25.0"
 latest_room_hum = "60.0"
 
-# Biến lưu trữ dữ liệu nhận từ sv2 (nếu cần dùng chung)
+# Biến lưu trữ dữ liệu nhận về từ sv2 (nếu cần dùng chung)
 sv2_shared_data = {}
+
+print("[Server] Đã sẵn sàng chạy theo cơ chế thu âm 2 giây tối ưu!")
 
 
 def remove_accents(input_str):
@@ -41,86 +44,58 @@ def remove_accents(input_str):
     return "".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
 
-# --- HÀM TRUYỀN DỮ LIỆU ĐI SV2 ---
-def send_to_sv2(payload):
-    """Hàm gửi dữ liệu sang sv2"""
-    try:
-        response = requests.post(SV2_URL, json=payload, timeout=2)
-        if response.status_code != 200:
-            print(f"[sv1 -> sv2] Phản hồi lỗi từ sv2: {response.status_code}")
-    except Exception as e:
-        pass
-
-
-# --- VÒNG LẶP NỀN (BACKGROUND WORKER) ĐẨY DỮ LIỆU LIÊN TỤC SANG SV2 ---
-def background_sync_worker():
-    global is_awake, alarm_is_active, alarm_hour, alarm_minute, latest_room_temp, latest_room_hum
+# --- HÀM LUỒNG NỀN ĐỒNG BỘ DỮ LIỆU SANG SV2 (MỖI 1 GIÂY) ---
+def sync_to_sv2_background():
+    global latest_room_temp, latest_room_hum, sv2_shared_data, is_awake, alarm_is_active
     print("[Server sv1] Luồng nền đồng bộ tự động sang sv2 đã khởi động!")
     while True:
-        time.sleep(1)
         try:
             payload = {
-                "event": "background_heartbeat",
-                "bot_state": "THUC" if is_awake else "NGU",
-                "bot_mode": "SET_MODE_5" if is_awake else "DEFAULT",
-                "alarm_state": "ON" if alarm_is_active else "OFF",
-                "alarm_hour": alarm_hour if alarm_hour is not None else "--",
-                "alarm_minute": alarm_minute if alarm_minute is not None else "--",
-                "room_temp": latest_room_temp,
-                "room_hum": latest_room_hum,
                 "temp": latest_room_temp,
                 "hum": latest_room_hum,
+                "bot_state": "THUC" if is_awake else "NGU",
+                "alarm_active": alarm_is_active,
             }
-            send_to_sv2(payload)
+            # Gửi dữ liệu sang sv2 (timeout ngắn để không làm nghẽn luồng)
+            response = requests.post(
+                f"{SV2_URL}/api/sync", json=payload, timeout=1
+            )
+            if response.status_code == 200:
+                # Nhận dữ liệu phản hồi ngược lại từ sv2 nếu có
+                if response.is_json:
+                    sv2_shared_data = response.json()
         except Exception as e:
-            print(f"[sv1 background] Lỗi đồng bộ ngầm: {e}")
+            # Bỏ qua lỗi kết nối tạm thời để luồng tiếp tục chạy ngầm
+            pass
+
+        time.sleep(1)
 
 
 @app.route("/")
 def home():
-    return "AI Speaker Server SV1 Running!"
+    return "AI Speaker Server Running!"
 
 
-# --- ENDPOINT NHẬN DỮ LIỆU TỪ SV2 ---
-@app.route("/api/receive-from-sv2", methods=["POST"])
-def receive_from_sv2():
-    global sv2_shared_data
-    if request.is_json:
-        data = request.get_json()
-        sv2_shared_data = data
-        print(f"[sv2 -> sv1] Đã nhận dữ liệu từ sv2: {data}")
-        return (
-            jsonify(
-                {"status": "success", "message": "SV1 received data from SV2"}
-            ),
-            200,
-        )
-    return jsonify({"status": "error", "message": "Invalid JSON"}), 400
-
-
-# --- ENDPOINT NHẬN DỮ LIỆU CẢM BIẾN TỪ ESP32 (Khắc phục lỗi 404) ---
+# --- ENDPOINT NHẬN TÍN HIỆU HOẶC CẬP NHẬT TỪ NGOÀI / ESP32 ---
 @app.route("/update-sensor", methods=["GET", "POST"])
 def update_sensor():
     global latest_room_temp, latest_room_hum
-    # Nếu ESP32 gửi qua query params trên URL (vd: /update-sensor?temp=25&hum=60)
     if request.args.get("temp"):
         latest_room_temp = str(request.args.get("temp"))
     if request.args.get("hum"):
         latest_room_hum = str(request.args.get("hum"))
-        
-    # Nếu gửi qua JSON
+
     if request.is_json:
         data = request.get_json()
         if "temp" in data:
             latest_room_temp = str(data.get("temp"))
         if "hum" in data:
             latest_room_hum = str(data.get("hum"))
-            
-    # Nếu gửi qua Headers
+
     if "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
         latest_room_temp = str(request.headers.get("X-Room-Temp"))
         latest_room_hum = str(request.headers.get("X-Room-Hum"))
-        
+
     return "", 204
 
 
@@ -130,24 +105,22 @@ def process_audio():
 
     current_bot_mode = "DEFAULT"
 
+    # Biến lưu thông tin báo thức trả về cho ESP32
     res_alarm_hour = "NONE"
     res_alarm_minute = "NONE"
     res_alarm_state = "ON" if alarm_is_active else "OFF"
 
+    # Cập nhật nhiệt độ độ ẩm nếu có từ header của ESP32
     if "X-Room-Temp" in request.headers and "X-Room-Hum" in request.headers:
-        room_temp = request.headers.get("X-Room-Temp")
-        room_hum = request.headers.get("X-Room-Hum")
         try:
-            room_temp = str(round(float(room_temp), 1))
-            room_hum = str(round(float(room_hum), 1))
-            latest_room_temp = room_temp
-            latest_room_hum = room_hum
+            latest_room_temp = str(
+                round(float(request.headers.get("X-Room-Temp")), 1)
+            )
+            latest_room_hum = str(
+                round(float(request.headers.get("X-Room-Hum")), 1)
+            )
         except:
-            room_temp = latest_room_temp
-            room_hum = latest_room_hum
-    else:
-        room_temp = latest_room_temp
-        room_hum = latest_room_hum
+            pass
 
     # 1. Xử lý sự kiện hệ thống (boot, connected từ ESP32)
     if request.is_json:
@@ -162,22 +135,12 @@ def process_audio():
             reply_text = "Kết nối server thành công"
             print(f"[Server] Sự kiện hệ thống - Phản hồi: {reply_text}")
 
-            send_to_sv2({
-                "event": "system_boot",
-                "bot_state": "Ngủ",
-                "bot_mode": "SET_MODE_0",
-                "alarm_state": "OFF",
-                "room_temp": room_temp,
-                "room_hum": room_hum,
-            })
-
             mp3_path = "response.mp3"
             raw_pcm_reply = "response.pcm"
             tts = gTTS(text=reply_text, lang="vi")
             tts.save(mp3_path)
             os.system(
-                f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1"
-                f" {raw_pcm_reply} > /dev/null 2>&1"
+                f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
             )
 
             if os.path.exists(raw_pcm_reply) and os.path.getsize(raw_pcm_reply) > 0:
@@ -187,12 +150,16 @@ def process_audio():
                 resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
                 resp.headers["Bot-Mode"] = "SET_MODE_0"
                 resp.headers["Alarm-State"] = "ON" if alarm_is_active else "OFF"
-                resp.headers["Alarm-Hour"] = str(alarm_hour) if alarm_hour is not None else "NONE"
-                resp.headers["Alarm-Minute"] = str(alarm_minute) if alarm_minute is not None else "NONE"
+                resp.headers["Alarm-Hour"] = (
+                    str(alarm_hour) if alarm_hour is not None else "NONE"
+                )
+                resp.headers["Alarm-Minute"] = (
+                    str(alarm_minute) if alarm_minute is not None else "NONE"
+                )
                 return resp
         return "", 204
 
-    # 2. Kiểm tra timeout 60 giây
+    # 2. Kiểm tra timeout 60 giây kể từ lần tương tác trước
     if is_awake and (time.time() - last_active_time > SLEEP_TIMEOUT):
         is_awake = False
         waiting_for_alarm = False
@@ -204,14 +171,6 @@ def process_audio():
     # 3. Nhận audio thô từ ESP32
     audio_data = request.data
     if len(audio_data) < 500:
-        send_to_sv2({
-            "event": "heartbeat_sync",
-            "bot_state": "THUC" if is_awake else "NGU",
-            "bot_mode": "DEFAULT",
-            "alarm_state": "ON" if alarm_is_active else "OFF",
-            "room_temp": room_temp,
-            "room_hum": room_hum,
-        })
         resp = make_response("", 204)
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = "DEFAULT"
@@ -225,8 +184,7 @@ def process_audio():
         f.write(audio_data)
 
     os.system(
-        f"ffmpeg -y -f s16le -ar 16000 -ac 1 -i {raw_pcm_path} {wav_path} >"
-        " /dev/null 2>&1"
+        f"ffmpeg -y -f s16le -ar 16000 -ac 1 -i {raw_pcm_path} {wav_path} > /dev/null 2>&1"
     )
 
     spoken_text = ""
@@ -288,6 +246,7 @@ def process_audio():
                 reply_text = "Đã hủy cài đặt báo thức."
                 current_bot_mode = "SET_MODE_1"
                 res_alarm_state = "OFF"
+                print("[Server] Đã hủy đặt báo thức theo yêu cầu.")
             else:
                 match_full = re.search(r"(\d+)\s*(?:giờ|h|:)\s*(\d+)?", spoken_text)
                 if match_full:
@@ -347,9 +306,14 @@ def process_audio():
                         res_alarm_state = "ON"
                         res_alarm_hour = str(alarm_hour)
                         res_alarm_minute = str(alarm_minute)
+
+                        print(
+                            f"[Server] Thiết lập thành công báo thức:"
+                            f" {final_time_str}"
+                        )
                         waiting_for_alarm = False
 
-        # ƯU TIÊN 2: Hủy / tắt khẩn cấp trực tiếp
+        # ƯU TIÊN 2: Các lệnh hủy / tắt khẩn cấp trực tiếp
         elif any(
             k in spoken_text
             for k in ["hủy báo thức", "xóa báo thức", "bỏ báo thức", "hủy lịch"]
@@ -362,6 +326,7 @@ def process_audio():
             reply_text = "Đã xóa báo thức đã đặt ạ."
             current_bot_mode = "SET_MODE_1"
             res_alarm_state = "OFF"
+            print("[Server] Đã hủy báo thức theo yêu cầu.")
 
         elif any(
             kw in spoken_text
@@ -376,8 +341,9 @@ def process_audio():
             reply_text = "Đã tắt báo thức ạ."
             current_bot_mode = "ALARM_STOP"
             res_alarm_state = "OFF"
+            print("[Server] Đã nhận lệnh tắt báo thức qua giọng nói.")
 
-        # ƯU TIÊN 3: Kiểm tra báo thức
+        # ƯU TIÊN 3: Kiểm tra trạng thái báo thức
         elif any(
             k in spoken_text for k in ["kiểm tra báo thức", "xem báo thức", "báo thức mấy giờ"]
         ):
@@ -391,6 +357,7 @@ def process_audio():
                 )
                 reply_text = f"Báo thức đang bật lúc {alarm_hour} giờ {alarm_minute} phút {period_str}."
             current_bot_mode = "SET_MODE_1"
+            print(f"[Server] Kiểm tra báo thức: {reply_text}")
 
         # ƯU TIÊN 4: Đặt báo thức mới
         elif "đặt báo thức" in spoken_text or "báo thức" in spoken_text:
@@ -400,10 +367,11 @@ def process_audio():
             alarm_period = None
             reply_text = "Sếp muốn đặt thế nào?"
             current_bot_mode = "SET_MODE_1"
+            print("[Server] Bắt đầu tiến trình đặt báo thức...")
 
         # ƯU TIÊN 5: Nhiệt độ phòng / Cảm biến
         elif "nhiệt độ phòng" in spoken_text or "nhiệt" in spoken_text:
-            reply_text = f"Nhiệt độ {room_temp} độ C và độ ẩm {room_hum} phần trăm"
+            reply_text = f"Nhiệt độ {latest_room_temp} độ C và độ ẩm {latest_room_hum} phần trăm"
             current_bot_mode = "SET_MODE_3"
 
         # ƯU TIÊN 6: Hỏi giờ hiện tại
@@ -421,11 +389,13 @@ def process_audio():
                 location = "HaNam"
                 parts = spoken_text.split("thời tiết")
                 if len(parts) > 1 and parts[1].strip() != "":
+                    raw_loc = parts[1].strip()
                     raw_loc = (
-                        parts[1].strip().replace("ở", "").replace("tại", "").strip()
+                        raw_loc.replace("ở", "").replace("tại", "").strip()
                     )
                     if raw_loc != "":
-                        location = remove_accents(raw_loc).replace(" ", "")
+                        clean_loc = remove_accents(raw_loc)
+                        location = clean_loc.replace(" ", "")
 
                 response = requests.get(
                     f"https://wttr.in/{location}?format=j1", timeout=3
@@ -434,13 +404,15 @@ def process_audio():
                     data = response.json()
                     temp = data["current_condition"][0]["temp_C"]
                     humidity = data["current_condition"][0]["humidity"]
+
                     reply_text = f"Thời tiết {location}. nhiệt độ {temp} độ C. độ ẩm {humidity} percent"
                 else:
                     reply_text = "Không tìm thấy thời tiết khu vực này"
             except Exception as e:
+                print(f"[Lỗi thời tiết chi tiết]: {e}")
                 reply_text = "Lỗi kết nối thời tiết"
 
-        # ƯU TIÊN 8: Tính toán
+        # ƯU TIÊN 8: Tính toán toán học
         elif any(
             op in spoken_text for op in ["cộng", "trừ", "nhân", "chia", "x", "+", "-", "*", "/"]
         ):
@@ -454,9 +426,11 @@ def process_audio():
                     .replace("x ", "*")
                     .replace("chia", "/")
                 )
+
                 expr = "".join(
                     [c for c in cleaned_text if c in "0123456789+-*/. "]
                 ).strip()
+
                 if expr:
                     result = eval(expr)
                     if isinstance(result, float) and not result.is_integer():
@@ -464,20 +438,22 @@ def process_audio():
                     reply_text = f"Kết quả bằng {result} ạ"
                 else:
                     reply_text = "sếp đọc lại giúp em."
-            except Exception:
+            except Exception as e:
+                print(f"[Lỗi tính toán]: {e}")
                 reply_text = "Em không thực hiện được phép tính này."
 
-        # ƯU TIÊN 9: Mode 5
+        # ƯU TIÊN 9: Kích hoạt Mode 5
         elif (
             "bật cài đặt" in spoken_text
             or "hey google" in spoken_text
-            or "1 2 3 4" in spoken_text
+            or "mode 5" in spoken_text
         ):
             reply_text = "Đã chuyển sang chế độ nháy nhạc."
             current_bot_mode = "SET_MODE_5"
             is_awake = False
+            print("[Server] Kích hoạt MODE 5: Bàn giao toàn quyền cho phần cứng S3 và H3.")
 
-        # ƯU TIÊN 10: Đi ngủ
+        # ƯU TIÊN 10: Lệnh đi ngủ
         elif "đi ngủ đi" in spoken_text or "ngủ đi" in spoken_text:
             is_awake = False
             waiting_for_alarm = False
@@ -486,37 +462,23 @@ def process_audio():
             alarm_period = None
             reply_text = "Vâng ạ"
             current_bot_mode = "SET_MODE_0"
+            print("[Server] Trạng thái: Đã chuyển về NGỦ theo yêu cầu.")
 
+        # NHÁNH MẶC ĐỊNH CUỐI CÙNG
         else:
             reply_text = "Sếp nói lại đi."
             current_bot_mode = "SET_MODE_1"
 
-    # 5. TỰ ĐỘNG ĐẨY DỮ LIỆU SANG SV2 NGAY KHI CÓ TƯƠNG TÁC
-    payload_to_sv2 = {
-        "event": "full_state_sync",
-        "spoken_text": spoken_text,
-        "bot_state": "THUC" if is_awake else "NGU",
-        "bot_mode": current_bot_mode,
-        "alarm_state": res_alarm_state,
-        "alarm_hour": alarm_hour if alarm_hour is not None else "--",
-        "alarm_minute": alarm_minute if alarm_minute is not None else "--",
-        "alarm_period": alarm_period,
-        "room_temp": room_temp,
-        "room_hum": room_hum,
-        "temp": room_temp,
-        "hum": room_hum,
-    }
-    send_to_sv2(payload_to_sv2)
+    print(f"[Server] Phản hồi: {reply_text} | Bot-Mode: {current_bot_mode}")
 
-    # 6. Tạo file âm thanh phản hồi
+    # 5. Tạo file âm thanh trả về cho ESP32 phát loa
     mp3_path = "response.mp3"
     raw_pcm_reply = "response.pcm"
 
     tts = gTTS(text=reply_text, lang="vi")
     tts.save(mp3_path)
     os.system(
-        f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1"
-        f" {raw_pcm_reply} > /dev/null 2>&1"
+        f"ffmpeg -y -i {mp3_path} -f s16le -acodec pcm_s16le -ar 16000 -ac 1 {raw_pcm_reply} > /dev/null 2>&1"
     )
 
     if is_awake:
@@ -528,6 +490,8 @@ def process_audio():
         )
         resp.headers["Bot-State"] = "THUC" if is_awake else "NGU"
         resp.headers["Bot-Mode"] = current_bot_mode
+
+        # Đẩy các thông số báo thức xuống headers
         resp.headers["Alarm-State"] = res_alarm_state
         resp.headers["Alarm-Hour"] = (
             str(alarm_hour) if alarm_hour is not None else "NONE"
@@ -535,13 +499,16 @@ def process_audio():
         resp.headers["Alarm-Minute"] = (
             str(alarm_minute) if alarm_minute is not None else "NONE"
         )
+
         return resp
     else:
+        print("[Lỗi] File PCM phản hồi bị rỗng hoặc lỗi tạo từ ffmpeg!")
         return "", 500
 
 
 if __name__ == "__main__":
-    sync_thread = threading.Thread(target=background_sync_worker, daemon=True)
+    # Khởi động luồng nền đồng bộ dữ liệu sang sv2 trước khi chạy app Flask
+    sync_thread = threading.Thread(target=sync_to_sv2_background, daemon=True)
     sync_thread.start()
 
     app.run(host="0.0.0.0", port=8080, debug=True)
